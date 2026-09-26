@@ -1,0 +1,118 @@
+[gd_scene format=3]
+
+[ext_resource type="Theme" path="res://ui/app_theme.tres" id="1_theme"]
+[ext_resource type="FontFile" path="res://ui/fonts/Nunito-ExtraBold.ttf" id="2_extrabold"]
+
+[node name="JourneyMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("1_theme")
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Center"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Center/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.949, 0.965, 1, 1)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 50
+text = "JOURNEY"
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="Center/VBox"]
+custom_minimum_size = Vector2(440, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.66, 0.52, 0.78, 1)
+theme_override_font_sizes/font_size = 20
+text = "A path through every world"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RuleWrap" type="CenterContainer" parent="Center/VBox"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+
+[node name="Rule" type="ColorRect" parent="Center/VBox/RuleWrap"]
+custom_minimum_size = Vector2(72, 3)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.96, 0.55, 1, 0.42)
+
+[node name="Map" type="VBoxContainer" parent="Center/VBox"]
+custom_minimum_size = Vector2(440, 168)
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="ContinueButton" type="Button" parent="Center/VBox"]
+custom_minimum_size = Vector2(440, 88)
+layout_mode = 2
+theme_type_variation = &"PlayButton"
+theme_override_font_sizes/font_size = 32
+text = "Continue"
+
+[node name="NewButton" type="Button" parent="Center/VBox"]
+custom_minimum_size = Vector2(440, 88)
+layout_mode = 2
+theme_type_variation = &"QuietButton"
+theme_override_font_sizes/font_size = 28
+text = "New Game"
+
+[node name="WorldsButton" type="Button" parent="Center/VBox"]
+custom_minimum_size = Vector2(440, 88)
+layout_mode = 2
+theme_type_variation = &"QuietButton"
+theme_override_font_sizes/font_size = 28
+text = "Worlds"
+
+[node name="PaceLabel" type="Label" parent="Center/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.66, 0.52, 0.78, 1)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 18
+text = "PACE"
+horizontal_alignment = 1
+
+[node name="PaceRow" type="HBoxContainer" parent="Center/VBox"]
+custom_minimum_size = Vector2(440, 80)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="StandardButton" type="Button" parent="Center/VBox/PaceRow"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.96, 0.55, 1, 1)
+theme_override_font_sizes/font_size = 28
+text = "Standard"
+
+[node name="RelaxedButton" type="Button" parent="Center/VBox/PaceRow"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.66, 0.52, 0.78, 1)
+theme_override_font_sizes/font_size = 28
+text = "Relaxed"
+
+[node name="Spacer2" type="Control" parent="Center/VBox"]
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="Center/VBox"]
+custom_minimum_size = Vector2(440, 80)
+layout_mode = 2
+theme_type_variation = &"GhostButton"
+theme_override_font_sizes/font_size = 26
+text = "Back"

@@ -1,0 +1,9 @@
+# Godot 4+
+.godot/
+/android/
+
+# Export output, itch zip, and local HTTPS certs
+/build/
+
+# Nested GitHub clone that used to sit inside this project
+/Sudoku worlds/

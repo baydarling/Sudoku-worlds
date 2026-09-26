@@ -1,0 +1,304 @@
+[gd_scene format=3 uid="uid://digr37xawssbc"]
+
+[ext_resource type="Theme" uid="uid://nabmc6oes4gy" path="res://ui/app_theme.tres" id="1_theme"]
+[ext_resource type="FontFile" uid="uid://4wm15c5qatye" path="res://ui/fonts/Nunito-ExtraBold.ttf" id="2_extrabold"]
+[ext_resource type="Script" uid="uid://lvl7wwgeeody" path="res://scripts/menu_glyph.gd" id="3_glyph"]
+[ext_resource type="Script" uid="uid://cwim8geq6prd5" path="res://scripts/footer_icon.gd" id="4_icon"]
+
+[node name="MainMenu" type="Control" unique_id=1979970915]
+custom_minimum_size = Vector2(720, 1280)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 720.0
+offset_bottom = 1280.0
+theme = ExtResource("1_theme")
+
+[node name="Header" type="Control" parent="." unique_id=1717945035]
+anchors_preset = 0
+offset_right = 720.0
+offset_bottom = 380.0
+mouse_filter = 2
+
+[node name="LogoSlot" type="Control" parent="Header" unique_id=1175989626]
+anchors_preset = 0
+offset_left = 160.0
+offset_top = 148.0
+offset_right = 560.0
+offset_bottom = 356.0
+mouse_filter = 2
+
+[node name="LogoFloat" type="VBoxContainer" parent="Header/LogoSlot" unique_id=1505164319]
+layout_mode = 0
+offset_right = 400.0
+offset_bottom = 208.0
+mouse_filter = 2
+theme_override_constants/separation = 2
+alignment = 1
+
+[node name="Glyph" type="Control" parent="Header/LogoSlot/LogoFloat" unique_id=1191210821]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+size_flags_horizontal = 4
+mouse_filter = 2
+script = ExtResource("3_glyph")
+
+[node name="Title" type="Label" parent="Header/LogoSlot/LogoFloat" unique_id=1602048777]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.93, 0.94, 0.98, 1)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 56
+text = "SUDOKU"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Header/LogoSlot/LogoFloat" unique_id=828951240]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.93, 0.78, 0.42, 0.82)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 20
+text = "W O R L D S"
+horizontal_alignment = 1
+
+[node name="Quit" type="Button" parent="Header"]
+modulate = Color(1, 1, 1, 0.7)
+custom_minimum_size = Vector2(96, 96)
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 104.0
+offset_bottom = 104.0
+theme_type_variation = &"FooterButton"
+
+[node name="Col" type="VBoxContainer" parent="Header/Quit"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="Icon" type="Control" parent="Header/Quit/Col"]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+size_flags_horizontal = 4
+mouse_filter = 2
+script = ExtResource("4_icon")
+kind = 3
+
+[node name="Caption" type="Label" parent="Header/Quit/Col"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Quit"
+horizontal_alignment = 1
+
+[node name="Streak" type="Button" parent="Header" unique_id=1851314339]
+custom_minimum_size = Vector2(96, 72)
+layout_mode = 0
+offset_left = 600.0
+offset_top = 8.0
+offset_right = 712.0
+offset_bottom = 80.0
+theme_type_variation = &"GhostButton"
+theme_override_colors/font_color = Color(0.93, 0.78, 0.42, 1)
+
+[node name="StreakCol" type="VBoxContainer" parent="Header/Streak" unique_id=230882929]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 0
+
+[node name="Count" type="Label" parent="Header/Streak/StreakCol" unique_id=522189043]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/font_color = Color(0.98, 0.86, 0.52, 1)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 28
+text = "0"
+horizontal_alignment = 1
+vertical_alignment = 2
+
+[node name="Hint" type="Label" parent="Header/Streak/StreakCol" unique_id=727946170]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.66, 0.78, 1)
+theme_override_font_sizes/font_size = 13
+text = "streak"
+horizontal_alignment = 1
+
+[node name="Body" type="VBoxContainer" parent="." unique_id=1298870558]
+layout_mode = 0
+offset_left = 140.0
+offset_top = 500.0
+offset_right = 580.0
+offset_bottom = 930.0
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="JourneyCluster" type="VBoxContainer" parent="Body"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="JourneyButton" type="Button" parent="Body/JourneyCluster" unique_id=1626402955]
+custom_minimum_size = Vector2(440, 128)
+layout_mode = 2
+theme_type_variation = &"PlayButton"
+theme_override_font_sizes/font_size = 34
+text = "Journey Mode"
+
+[node name="JourneyLinks" type="HBoxContainer" parent="Body/JourneyCluster"]
+visible = false
+custom_minimum_size = Vector2(440, 48)
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="NewGame" type="Button" parent="Body/JourneyCluster/JourneyLinks"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FooterButton"
+theme_override_colors/font_color = Color(0.93, 0.78, 0.42, 0.82)
+theme_override_colors/font_hover_color = Color(1, 0.9, 0.62, 1)
+theme_override_colors/font_pressed_color = Color(0.82, 0.62, 0.32, 1)
+theme_override_font_sizes/font_size = 20
+text = "New Game"
+
+[node name="Rule" type="ColorRect" parent="Body/JourneyCluster/JourneyLinks"]
+custom_minimum_size = Vector2(2, 22)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+color = Color(0.93, 0.78, 0.42, 0.28)
+
+[node name="Worlds" type="Button" parent="Body/JourneyCluster/JourneyLinks"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FooterButton"
+theme_override_colors/font_color = Color(0.93, 0.78, 0.42, 0.82)
+theme_override_colors/font_hover_color = Color(1, 0.9, 0.62, 1)
+theme_override_colors/font_pressed_color = Color(0.82, 0.62, 0.32, 1)
+theme_override_font_sizes/font_size = 20
+text = "Worlds"
+
+[node name="QuickPlayButton" type="Button" parent="Body" unique_id=221894591]
+custom_minimum_size = Vector2(440, 88)
+layout_mode = 2
+theme_type_variation = &"QuietButton"
+theme_override_font_sizes/font_size = 28
+text = "Quickplay"
+
+[node name="RaceButton" type="Button" parent="Body" unique_id=1728451103]
+custom_minimum_size = Vector2(440, 88)
+layout_mode = 2
+theme_type_variation = &"HeatButton"
+theme_override_font_sizes/font_size = 28
+text = "Race Mode"
+
+[node name="Footer" type="MarginContainer" parent="." unique_id=701293102]
+layout_mode = 0
+offset_top = 1152.0
+offset_right = 720.0
+offset_bottom = 1280.0
+theme_override_constants/margin_left = 36
+theme_override_constants/margin_right = 36
+theme_override_constants/margin_bottom = 8
+
+[node name="FooterRow" type="HBoxContainer" parent="Footer" unique_id=1140918159]
+modulate = Color(1, 1, 1, 0.7)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SettingsButton" type="Button" parent="Footer/FooterRow" unique_id=1504848749]
+custom_minimum_size = Vector2(0, 96)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FooterButton"
+
+[node name="Col" type="VBoxContainer" parent="Footer/FooterRow/SettingsButton" unique_id=1798878063]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="Icon" type="Control" parent="Footer/FooterRow/SettingsButton/Col" unique_id=2014811866]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+size_flags_horizontal = 4
+mouse_filter = 2
+script = ExtResource("4_icon")
+
+[node name="Caption" type="Label" parent="Footer/FooterRow/SettingsButton/Col" unique_id=1865737234]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Settings"
+horizontal_alignment = 1
+
+[node name="ProfileButton" type="Button" parent="Footer/FooterRow" unique_id=631995929]
+custom_minimum_size = Vector2(0, 96)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FooterButton"
+
+[node name="Col" type="VBoxContainer" parent="Footer/FooterRow/ProfileButton" unique_id=1579035309]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="Icon" type="Control" parent="Footer/FooterRow/ProfileButton/Col" unique_id=1618102487]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+size_flags_horizontal = 4
+mouse_filter = 2
+script = ExtResource("4_icon")
+kind = 1
+
+[node name="Caption" type="Label" parent="Footer/FooterRow/ProfileButton/Col" unique_id=1499700607]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Profile"
+horizontal_alignment = 1
+
+[node name="BoardButton" type="Button" parent="Footer/FooterRow" unique_id=388508716]
+custom_minimum_size = Vector2(0, 96)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FooterButton"
+
+[node name="Col" type="VBoxContainer" parent="Footer/FooterRow/BoardButton" unique_id=345521380]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="Icon" type="Control" parent="Footer/FooterRow/BoardButton/Col" unique_id=1484719661]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+size_flags_horizontal = 4
+mouse_filter = 2
+script = ExtResource("4_icon")
+kind = 2
+
+[node name="Caption" type="Label" parent="Footer/FooterRow/BoardButton/Col" unique_id=612787563]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Leaderboard"
+horizontal_alignment = 1

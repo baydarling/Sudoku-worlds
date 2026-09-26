@@ -1,0 +1,254 @@
+[gd_scene format=3 uid="uid://b71wuoke6wwjj"]
+
+[ext_resource type="Script" uid="uid://dbvuiqqo6l448" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://5h8f3n87m7nh" path="res://scripts/sudoku_board.gd" id="2_board"]
+[ext_resource type="Script" uid="uid://dmsvqngy5xkw2" path="res://scripts/world_look.gd" id="3_a8y0u"]
+[ext_resource type="Theme" uid="uid://nabmc6oes4gy" path="res://ui/app_theme.tres" id="3_theme"]
+[ext_resource type="FontFile" uid="uid://4wm15c5qatye" path="res://ui/fonts/Nunito-ExtraBold.ttf" id="4_extrabold"]
+[ext_resource type="FontFile" uid="uid://b1orx14rk5wqu" path="res://ui/fonts/Nunito-Regular.ttf" id="5_regular"]
+[ext_resource type="Shader" uid="uid://d2k648ftom4bl" path="res://ui/stage_background.gdshader" id="6_bg"]
+[ext_resource type="PackedScene" path="res://scenes/journey_menu.tscn" id="7_journey"]
+[ext_resource type="PackedScene" uid="uid://digr37xawssbc" path="res://scenes/main_menu.tscn" id="7_menu"]
+[ext_resource type="PackedScene" path="res://scenes/difficulty_menu.tscn" id="8_diff"]
+[ext_resource type="PackedScene" uid="uid://hjxyi55di5wk" path="res://scenes/levels_menu.tscn" id="8_levels"]
+[ext_resource type="PackedScene" path="res://scenes/race_menu.tscn" id="8_race"]
+[ext_resource type="PackedScene" path="res://scenes/win_screen.tscn" id="9_win"]
+[ext_resource type="Resource" uid="uid://bso7tgska1qnv" path="res://worlds/desert.tres" id="10_desert"]
+[ext_resource type="PackedScene" path="res://scenes/settings_menu.tscn" id="10_settings"]
+[ext_resource type="Resource" uid="uid://dwqq67f7mxy17" path="res://worlds/water.tres" id="11_water"]
+[ext_resource type="Resource" uid="uid://mjegw4kgp1ic" path="res://worlds/neon.tres" id="12_neon"]
+[ext_resource type="Resource" uid="uid://bx0qig8nudwt7" path="res://worlds/forest.tres" id="13_forest"]
+[ext_resource type="Resource" uid="uid://m14h2db5vkmh" path="res://worlds/ember.tres" id="14_ember"]
+[ext_resource type="PackedScene" path="res://scenes/profile_menu.tscn" id="15_profile"]
+[ext_resource type="PackedScene" path="res://scenes/board_menu.tscn" id="16_board"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_bg"]
+shader = ExtResource("6_bg")
+shader_parameter/mood = 0.7
+shader_parameter/sky_top = Color(0.02, 0, 0.04, 1)
+shader_parameter/sky_bottom = Color(0.05, 0, 0.08, 1)
+shader_parameter/glow_color = Color(0.55, 0.12, 0.75, 1)
+shader_parameter/world = 2
+
+[node name="Main" type="Control" unique_id=1278853589]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("3_theme")
+script = ExtResource("1_main")
+worlds = Array[ExtResource("3_a8y0u")]([ExtResource("10_desert"), ExtResource("11_water"), ExtResource("12_neon"), ExtResource("13_forest"), ExtResource("14_ember")])
+
+[node name="NightTint" type="CanvasModulate" parent="." unique_id=494294306]
+
+[node name="AmbiencePlayer" type="AudioStreamPlayer" parent="." unique_id=975223419]
+bus = &"Ambience"
+
+[node name="CompletionsPlayer" type="AudioStreamPlayer" parent="." unique_id=1082758611]
+bus = &"SFX"
+
+[node name="ClicksPlayer" type="AudioStreamPlayer" parent="." unique_id=987966385]
+bus = &"UI"
+
+[node name="MenuPlayer" type="AudioStreamPlayer" parent="." unique_id=1400000001]
+
+[node name="WinPlayer" type="AudioStreamPlayer" parent="." unique_id=1400000002]
+
+[node name="Background" type="ColorRect" parent="." unique_id=1645891910]
+material = SubResource("ShaderMaterial_bg")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MainMenu" parent="." unique_id=1646731703 instance=ExtResource("7_menu")]
+layout_mode = 0
+
+[node name="JourneyMenu" parent="." unique_id=1219992512 instance=ExtResource("7_journey")]
+visible = false
+layout_mode = 0
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 720.0
+offset_bottom = 1280.0
+grow_horizontal = 1
+grow_vertical = 1
+
+[node name="LevelsMenu" parent="." unique_id=1976805136 instance=ExtResource("8_levels")]
+visible = false
+layout_mode = 0
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 720.0
+offset_bottom = 1280.0
+grow_horizontal = 1
+grow_vertical = 1
+
+[node name="DifficultyMenu" parent="." unique_id=1938710396 instance=ExtResource("8_diff")]
+visible = false
+layout_mode = 0
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 720.0
+offset_bottom = 1280.0
+grow_horizontal = 1
+grow_vertical = 1
+
+[node name="RaceMenu" parent="." unique_id=1938710397 instance=ExtResource("8_race")]
+visible = false
+layout_mode = 0
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 720.0
+offset_bottom = 1280.0
+grow_horizontal = 1
+grow_vertical = 1
+
+[node name="SettingsMenu" parent="." unique_id=893651339 instance=ExtResource("10_settings")]
+visible = false
+layout_mode = 0
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 720.0
+offset_bottom = 1280.0
+grow_horizontal = 1
+grow_vertical = 1
+
+[node name="ProfileMenu" parent="." unique_id=893651340 instance=ExtResource("15_profile")]
+visible = false
+layout_mode = 0
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 720.0
+offset_bottom = 1280.0
+grow_horizontal = 1
+grow_vertical = 1
+
+[node name="BoardMenu" parent="." unique_id=893651341 instance=ExtResource("16_board")]
+visible = false
+layout_mode = 0
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 720.0
+offset_bottom = 1280.0
+grow_horizontal = 1
+grow_vertical = 1
+
+[node name="GameScreen" type="Control" parent="." unique_id=1832893754]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="GameScreen" unique_id=800397641]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="VBox" type="VBoxContainer" parent="GameScreen/Margin" unique_id=1988348202]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="TopBar" type="HBoxContainer" parent="GameScreen/Margin/VBox" unique_id=980392264]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="MenuButton" type="Button" parent="GameScreen/Margin/VBox/TopBar" unique_id=980805479]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "Menu"
+
+[node name="StatusLabel" type="Label" parent="GameScreen/Margin/VBox/TopBar" unique_id=474108425]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.7, 0.55, 0.84, 1)
+theme_override_font_sizes/font_size = 27
+text = "00:00"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NewButton" type="Button" parent="GameScreen/Margin/VBox/TopBar" unique_id=1116487124]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "New"
+
+[node name="BoardWrap" type="AspectRatioContainer" parent="GameScreen/Margin/VBox" unique_id=648919241]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Board" type="Control" parent="GameScreen/Margin/VBox/BoardWrap" unique_id=1150275660]
+layout_mode = 2
+script = ExtResource("2_board")
+given_font = ExtResource("4_extrabold")
+entry_font = ExtResource("5_regular")
+
+[node name="NumberPad" type="GridContainer" parent="GameScreen/Margin/VBox" unique_id=1972439946]
+layout_mode = 2
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 12
+columns = 5
+
+[node name="ActionBar" type="HBoxContainer" parent="GameScreen/Margin/VBox" unique_id=763907192]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="NotesButton" type="Button" parent="GameScreen/Margin/VBox/ActionBar" unique_id=414005220]
+custom_minimum_size = Vector2(0, 96)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.6
+focus_mode = 0
+theme_override_font_sizes/font_size = 28
+text = "Notes"
+
+[node name="UndoButton" type="Button" parent="GameScreen/Margin/VBox/ActionBar" unique_id=1347439498]
+custom_minimum_size = Vector2(0, 96)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 28
+disabled = true
+text = "Undo"
+
+[node name="HintButton" type="Button" parent="GameScreen/Margin/VBox/ActionBar" unique_id=1251113104]
+custom_minimum_size = Vector2(0, 96)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 28
+disabled = true
+text = "Hint · 3"
+
+[node name="WinScreen" parent="." unique_id=855286127 instance=ExtResource("9_win")]
+visible = false
+layout_mode = 0
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 720.0
+offset_bottom = 1280.0
+grow_horizontal = 1
+grow_vertical = 1
