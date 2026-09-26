@@ -1,0 +1,100 @@
+[gd_scene format=3 uid="uid://hjxyi55di5wk"]
+
+[ext_resource type="Theme" uid="uid://nabmc6oes4gy" path="res://ui/app_theme.tres" id="1_theme"]
+[ext_resource type="FontFile" uid="uid://4wm15c5qatye" path="res://ui/fonts/Nunito-ExtraBold.ttf" id="2_extrabold"]
+
+[node name="LevelsMenu" type="Control" unique_id=18677036]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("1_theme")
+
+[node name="Center" type="CenterContainer" parent="." unique_id=299308236]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Center" unique_id=1670739128]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Title" type="Label" parent="Center/VBox" unique_id=1083664942]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.949, 0.965, 1, 1)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 58
+text = "WORLDS"
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="Center/VBox" unique_id=1683837293]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.66, 0.52, 0.78, 1)
+theme_override_font_sizes/font_size = 24
+text = "Pick a place"
+horizontal_alignment = 1
+
+[node name="RuleWrap" type="CenterContainer" parent="Center/VBox"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+
+[node name="Rule" type="ColorRect" parent="Center/VBox/RuleWrap"]
+custom_minimum_size = Vector2(72, 3)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.96, 0.55, 1, 0.42)
+
+[node name="List" type="VBoxContainer" parent="Center/VBox" unique_id=1445242973]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="DesertButton" type="Button" parent="Center/VBox/List" unique_id=1258096985]
+custom_minimum_size = Vector2(440, 92)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.74, 0.28, 1)
+theme_override_font_sizes/font_size = 34
+text = "Desert"
+
+[node name="WaterButton" type="Button" parent="Center/VBox/List" unique_id=598492075]
+custom_minimum_size = Vector2(440, 92)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.35, 0.86, 1, 1)
+theme_override_font_sizes/font_size = 34
+text = "Water"
+
+[node name="NeonButton" type="Button" parent="Center/VBox/List" unique_id=683339760]
+custom_minimum_size = Vector2(440, 92)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.55, 1, 1)
+theme_override_font_sizes/font_size = 34
+text = "Neon"
+
+[node name="ForestButton" type="Button" parent="Center/VBox/List"]
+custom_minimum_size = Vector2(440, 92)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.45, 0.92, 0.38, 1)
+theme_override_font_sizes/font_size = 34
+text = "Forest"
+
+[node name="EmberButton" type="Button" parent="Center/VBox/List"]
+custom_minimum_size = Vector2(440, 92)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.42, 0.14, 1)
+theme_override_font_sizes/font_size = 34
+text = "Ember"
+
+[node name="Spacer2" type="Control" parent="Center/VBox" unique_id=1718569075]
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="Center/VBox" unique_id=1365982286]
+custom_minimum_size = Vector2(440, 80)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.66, 0.52, 0.78, 1)
+theme_override_font_sizes/font_size = 28
+text = "Back"

@@ -1,0 +1,114 @@
+[gd_scene format=3]
+
+[ext_resource type="Theme" path="res://ui/app_theme.tres" id="1_theme"]
+[ext_resource type="FontFile" path="res://ui/fonts/Nunito-ExtraBold.ttf" id="2_extrabold"]
+[ext_resource type="Shader" path="res://ui/win_bloom.gdshader" id="3_bloom"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_win"]
+shader = ExtResource("3_bloom")
+shader_parameter/spread = 1.0
+
+[node name="WinScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+theme = ExtResource("1_theme")
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0, 0, 0, 0.72)
+
+[node name="Bloom" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_win")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 52
+theme_override_constants/margin_top = 52
+theme_override_constants/margin_right = 52
+theme_override_constants/margin_bottom = 52
+
+[node name="VBox" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="WinLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.62, 0.96, 1)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 68
+text = "YOU WON!"
+horizontal_alignment = 1
+
+[node name="TimeLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.55, 0.84, 1)
+theme_override_font_sizes/font_size = 29
+text = "Solved in 00:00"
+horizontal_alignment = 1
+
+[node name="HighscoreLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.32, 1)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 32
+text = "High score  ·  0"
+horizontal_alignment = 1
+
+[node name="AskLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 38
+text = "Next level?"
+horizontal_alignment = 1
+
+[node name="Buttons" type="HBoxContainer" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 20
+alignment = 1
+
+[node name="YesButton" type="Button" parent="Center/Panel/Margin/VBox/Buttons"]
+custom_minimum_size = Vector2(230, 112)
+layout_mode = 2
+focus_mode = 0
+mouse_filter = 0
+theme_override_colors/font_color = Color(0.42, 0.851, 0.541, 1)
+theme_override_font_sizes/font_size = 34
+text = "Next"
+
+[node name="NoButton" type="Button" parent="Center/Panel/Margin/VBox/Buttons"]
+custom_minimum_size = Vector2(230, 112)
+layout_mode = 2
+focus_mode = 0
+mouse_filter = 0
+theme_override_colors/font_color = Color(0.7, 0.55, 0.84, 1)
+theme_override_font_sizes/font_size = 34
+text = "No"

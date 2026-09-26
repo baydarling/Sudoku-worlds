@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="WorldLook" format=3 uid="uid://bx0qig8nudwt7"]
+
+[ext_resource type="Script" uid="uid://dmsvqngy5xkw2" path="res://scripts/world_look.gd" id="1_look"]
+[ext_resource type="AudioStream" uid="uid://bduuon0guyh3o" path="res://audio/forest.mp3" id="2_amb"]
+
+[resource]
+script = ExtResource("1_look")
+title = "Forest"
+style = 3
+ink = Color(0.45, 0.92, 0.38, 1)
+ambience = ExtResource("2_amb")
+ambience_bus = "Forest"
+particle_strength = 1.35
+particle_size = 1.1
+burst_strength = 1.1

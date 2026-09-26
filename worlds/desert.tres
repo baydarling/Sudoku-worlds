@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="WorldLook" format=3 uid="uid://bso7tgska1qnv"]
+
+[ext_resource type="Script" uid="uid://dmsvqngy5xkw2" path="res://scripts/world_look.gd" id="1_look"]
+[ext_resource type="AudioStream" uid="uid://fps7xepxn11r" path="res://audio/desert.mp3" id="2_amb"]
+
+[resource]
+script = ExtResource("1_look")
+title = "Desert"
+style = 0
+ink = Color(1, 0.74, 0.28, 1)
+ambience = ExtResource("2_amb")
+ambience_bus = "Desert"
+particle_strength = 1.05
+burst_strength = 1.2
+burst_fall = 1.45

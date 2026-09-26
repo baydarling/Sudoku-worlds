@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="WorldLook" format=3 uid="uid://m14h2db5vkmh"]
+
+[ext_resource type="Script" uid="uid://dmsvqngy5xkw2" path="res://scripts/world_look.gd" id="1_look"]
+[ext_resource type="AudioStream" uid="uid://b32q6jxtwj6uq" path="res://audio/ember.mp3" id="2_amb"]
+
+[resource]
+script = ExtResource("1_look")
+title = "Ember"
+style = 4
+ink = Color(1, 0.42, 0.14, 1)
+ambience = ExtResource("2_amb")
+ambience_bus = "Ember"
+particle_strength = 1.4
+particle_size = 1.05
+burst_strength = 1.2
+burst_size = 1.15

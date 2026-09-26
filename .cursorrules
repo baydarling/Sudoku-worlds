@@ -1,0 +1,10 @@
+You are an expert in Godot 4 and GDScript 2.0. 
+For the mobile 2d game project "Sudoku Worlds", strictly follow these rules:
+
+- ALWAYS use Godot 4 syntax. NEVER use Godot 3 syntax.
+- Use `await` instead of `yield`.
+- Use `@export` instead of `export`.
+- Use `@onready` instead of `onready`.
+- Use signal connections like this: `node.signal_name.connect(callable)`.
+- Use `CharacterBody2D` instead of `KinematicBody2D`.
+- Use strict static typing wherever possible (e.g., `var speed: float = 300.0`).
