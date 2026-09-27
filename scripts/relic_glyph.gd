@@ -34,13 +34,13 @@ func _draw() -> void:
 	draw_arc(center, radius, 0.0, TAU, 40, rim, maxf(2.0, span * 0.045), true)
 	var sheen := Color(1.0, 1.0, 1.0, 0.14 if not muted else 0.06)
 	draw_circle(center + Vector2(-radius * 0.28, -radius * 0.3), radius * 0.14, sheen)
-	match clampi(kind, 0, 9):
+	match clampi(kind, 0, 13):
 		0:
 			_draw_magnet(center, span, ink)
 		1:
 			_draw_shield(center, span, ink)
 		2:
-			_draw_coin(center, span, ink)
+			_draw_relay(center, span, ink)
 		3:
 			_draw_eye(center, span, ink)
 		4:
@@ -55,13 +55,21 @@ func _draw() -> void:
 			_draw_heart(center, span, ink)
 		9:
 			_draw_vial(center, span, ink)
+		10:
+			_draw_box_seal(center, span, ink)
+		11:
+			_draw_row_seal(center, span, ink)
+		12:
+			_draw_column_seal(center, span, ink)
+		13:
+			_draw_plus_seal(center, span, ink)
 
 
 func _ink() -> Color:
 	var accents: Array[Color] = [
 		Color(1.0, 0.52, 0.38, 1.0),
 		Color(0.74, 0.84, 0.96, 1.0),
-		Color(0.96, 0.84, 0.38, 1.0),
+		Color(0.45, 0.95, 0.98, 1.0),
 		Color(0.86, 0.62, 1.0, 1.0),
 		Color(0.72, 0.92, 0.78, 1.0),
 		Color(0.55, 0.82, 0.96, 1.0),
@@ -69,6 +77,10 @@ func _ink() -> Color:
 		Color(1.0, 0.48, 0.32, 1.0),
 		Color(1.0, 0.42, 0.48, 1.0),
 		Color(0.62, 0.88, 0.96, 1.0),
+		Color(0.78, 0.92, 0.62, 1.0),
+		Color(0.98, 0.78, 0.42, 1.0),
+		Color(0.62, 0.78, 0.98, 1.0),
+		Color(1.0, 0.86, 0.46, 1.0),
 	]
 	var ink: Color = accents[clampi(kind, 0, accents.size() - 1)]
 	if muted:
@@ -109,17 +121,15 @@ func _draw_shield(center: Vector2, span: float, ink: Color) -> void:
 	draw_line(center + Vector2(0.0, -h * 0.48), center + Vector2(0.0, h * 0.38), ink, maxf(1.8, thick * 0.65), true)
 
 
-func _draw_coin(center: Vector2, span: float, ink: Color) -> void:
+func _draw_relay(center: Vector2, span: float, ink: Color) -> void:
 	var thick: float = maxf(2.0, span * 0.065)
-	var outer: float = span * 0.21
-	var fill: Color = ink
-	fill.a = 0.18 if not muted else 0.08
-	draw_circle(center, outer, fill)
-	draw_arc(center, outer, 0.0, TAU, 36, ink, thick, true)
-	draw_arc(center, outer * 0.68, 0.0, TAU, 28, ink, maxf(1.6, thick * 0.7), true)
-	var tick: float = outer * 0.26
-	draw_line(center + Vector2(-tick, 0.0), center + Vector2(tick, 0.0), ink, thick, true)
-	draw_line(center + Vector2(0.0, -tick), center + Vector2(0.0, tick), ink, thick, true)
+	var left := center + Vector2(-span * 0.16, span * 0.02)
+	var right := center + Vector2(span * 0.16, -span * 0.02)
+	draw_arc(center + Vector2(0.0, span * 0.02), span * 0.16, PI + 0.35, TAU - 0.15, 16, ink, thick, true)
+	draw_circle(left, span * 0.055, ink)
+	draw_circle(right, span * 0.055, ink)
+	var glint := Color(1.0, 1.0, 1.0, 0.9 if not muted else 0.35)
+	draw_circle(right + Vector2(span * 0.02, -span * 0.02), span * 0.022, glint)
 
 
 func _draw_eye(center: Vector2, span: float, ink: Color) -> void:
@@ -189,6 +199,10 @@ func _draw_band(center: Vector2, span: float, ink: Color) -> void:
 		center + Vector2(-span * 0.055, 0.0),
 	])
 	draw_colored_polygon(gem, ink)
+	var ray: float = maxf(1.6, thick * 0.7)
+	draw_line(center + Vector2(0.0, -outer - span * 0.02), center + Vector2(0.0, -outer - span * 0.09), ink, ray, true)
+	draw_line(center + Vector2(-outer * 0.72, -outer * 0.72), center + Vector2(-outer * 0.98, -outer * 0.98), ink, ray, true)
+	draw_line(center + Vector2(outer * 0.72, -outer * 0.72), center + Vector2(outer * 0.98, -outer * 0.98), ink, ray, true)
 
 
 func _draw_phoenix(center: Vector2, span: float, ink: Color) -> void:
@@ -263,3 +277,40 @@ func _draw_vial(center: Vector2, span: float, ink: Color) -> void:
 	draw_rect(neck, fill, true)
 	draw_rect(neck, ink, false, thick)
 	draw_line(center + Vector2(-span * 0.07, span * 0.04), center + Vector2(span * 0.07, span * 0.04), ink, maxf(1.6, thick * 0.7), true)
+
+
+func _draw_box_seal(center: Vector2, span: float, ink: Color) -> void:
+	var thick: float = maxf(2.0, span * 0.06)
+	var gap: float = span * 0.09
+	var half: float = gap * 1.35
+	draw_rect(Rect2(center.x - half, center.y - half, half * 2.0, half * 2.0), ink, false, thick)
+	for row in 3:
+		for column in 3:
+			var dot := center + Vector2((float(column) - 1.0) * gap, (float(row) - 1.0) * gap)
+			draw_circle(dot, span * 0.028, ink)
+
+
+func _draw_row_seal(center: Vector2, span: float, ink: Color) -> void:
+	var thick: float = maxf(2.2, span * 0.07)
+	var gap: float = span * 0.11
+	for column in 3:
+		var dot := center + Vector2((float(column) - 1.0) * gap, 0.0)
+		draw_circle(dot, span * 0.04, ink)
+	draw_line(center + Vector2(-gap * 1.35, 0.0), center + Vector2(gap * 1.35, 0.0), ink, thick, true)
+
+
+func _draw_column_seal(center: Vector2, span: float, ink: Color) -> void:
+	var thick: float = maxf(2.2, span * 0.07)
+	var gap: float = span * 0.11
+	for row in 3:
+		var dot := center + Vector2(0.0, (float(row) - 1.0) * gap)
+		draw_circle(dot, span * 0.04, ink)
+	draw_line(center + Vector2(0.0, -gap * 1.35), center + Vector2(0.0, gap * 1.35), ink, thick, true)
+
+
+func _draw_plus_seal(center: Vector2, span: float, ink: Color) -> void:
+	var thick: float = maxf(2.4, span * 0.08)
+	var arm: float = span * 0.2
+	draw_line(center + Vector2(-arm, 0.0), center + Vector2(arm, 0.0), ink, thick, true)
+	draw_line(center + Vector2(0.0, -arm), center + Vector2(0.0, arm), ink, thick, true)
+	draw_circle(center, span * 0.045, ink)
