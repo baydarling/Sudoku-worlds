@@ -69,6 +69,13 @@ const CLICK_PITCH: float = 1.05
 const ONESHOT_VOICES: int = 3
 const MENU_STREAM: AudioStream = preload("res://audio/menu.mp3")
 const WIN_STREAM: AudioStream = preload("res://audio/win.mp3")
+const TREASURE_STREAM: AudioStream = preload("res://audio/treasure.mp3")
+const OVERHEAT_STREAM: AudioStream = preload("res://audio/overheat.wav")
+const RELIC_BUY_STREAM: AudioStream = preload("res://audio/relic_buy.wav")
+const CYBER_UNLOCK_STREAM: AudioStream = preload("res://audio/cyber_unlock.mp3")
+const ALGAE_SPLASH_STREAM: AudioStream = preload("res://audio/algae_splash.wav")
+const ALGAE_TAP_STREAM: AudioStream = preload("res://audio/algae_tap.wav")
+const LEAF_CLEAR_STREAM: AudioStream = preload("res://audio/leaf_clear.wav")
 const AUDIO_SILENCE_DB: float = -42.0
 const AMBIENCE_FADE_IN: float = 1.7
 const AMBIENCE_FADE_OUT: float = 0.55
@@ -82,6 +89,14 @@ const MINI_HINTS_BY_DIFFICULTY: Array[int] = [2, 1, 1]
 const WIDE_HINTS_BY_DIFFICULTY: Array[int] = [2, 2, 1]
 ## Optional star clocks by Easy / Medium / Hard. Relaxed adds half again.
 const STAR_TIME_LIMITS: Array[float] = [240.0, 480.0, 720.0]
+const MISTAKE_SHAKE_TIME: float = 0.32
+const MISTAKE_SHAKE_PX: float = 8.0
+const OVERHEAT_SHAKE_TIME: float = 0.5
+const OVERHEAT_SHAKE_PX: float = 15.0
+const OVERHEAT_SCORE_COST: int = 300
+const MISTAKE_FLASH_HOLD: float = 0.35
+const MISTAKE_FLASH_FADE: float = 0.55
+const LAVA_RED: Color = Color(1.0, 0.28, 0.08)
 
 ## How a new screen and its buttons arrive after a choice.
 const MOTION_REVEAL: float = 0.56
@@ -137,6 +152,7 @@ class Chrome extends RefCounted:
 @onready var _win_bloom: ColorRect = $WinScreen/Bloom
 @onready var _win_panel: PanelContainer = $WinScreen/Center/Panel
 @onready var _win_label: Label = $WinScreen/Center/Panel/Margin/VBox/WinLabel
+@onready var _win_stars: WinStars = $WinScreen/Center/Panel/Margin/VBox/WinStars
 @onready var _board: SudokuBoard = $GameScreen/Margin/VBox/BoardWrap/Board
 @onready var _number_pad: GridContainer = $GameScreen/Margin/VBox/NumberPad
 @onready var _notes_button: Button = $GameScreen/Margin/VBox/ActionBar/NotesButton
@@ -207,15 +223,22 @@ var _shop: ShopManager = ShopManager.new()
 var _race: RaceModeManager = RaceModeManager.new()
 var _journey_stars: PackedInt32Array = PackedInt32Array()
 var _puzzle_hints_used: int = 0
+var _puzzle_seals_used: int = 0
 var _puzzle_mistakes: int = 0
+## The first full heat bar this puzzle only warns. The next one is the overheat.
+var _ember_warned: bool = false
 var _last_puzzle_stars: int = 0
 var _last_gold_paid: int = 0
-var _last_gold_doubled: bool = false
 var _last_gold_clear: int = 0
 var _last_gold_flawless: int = 0
 var _last_gold_interest: int = 0
 var _last_gold_vines: int = 0
+var _last_gold_sand: int = 0
+var _last_gold_stars: int = 0
 var _last_gold_lost: int = 0
+var _last_star_hint: bool = false
+var _last_star_clean: bool = false
+var _last_star_clock: bool = false
 var _journey_failed: bool = false
 var _shop_screen: Control
 var _shop_title: Label
@@ -228,6 +251,12 @@ var _shop_skip: Button
 var _shop_waiting: bool = false
 var _relic_tray: HBoxContainer
 var _play_relic_glyphs: Array[RelicGlyph] = []
+var _tool_bar: VBoxContainer
+var _tool_prompt: Label
+var _tool_buttons: Array[Button] = []
+var _tool_glyphs: Array[RelicGlyph] = []
+var _armed_tool: int = -1
+var _last_star_seal: bool = false
 var _journey_map: VBoxContainer
 var _world_index: int = 0
 var _elapsed_seconds: float = 0.0
@@ -271,6 +300,7 @@ var _race_ending: bool = false
 var _race_chain_tween: Tween
 var _race_flash: ColorRect
 var _poison_screen_flash: ColorRect
+var _ember_rush: EmberRush
 var _poison_screen_tween: Tween
 var _race_banner: Label
 var _race_next_puzzle: SudokuGenerator.Puzzle
@@ -278,12 +308,25 @@ var _race_clock_flash: float = 0.0
 var _race_clock_good: bool = true
 var _race_danger_mix: float = 0.0
 var _status_clock_tween: Tween
+var _play_camera: Camera2D
+var _mistake_flash: CanvasModulate
+var _mistake_flash_tween: Tween
+var _mistake_shake: float = 0.0
+var _shake_time: float = MISTAKE_SHAKE_TIME
+var _shake_reach: float = MISTAKE_SHAKE_PX
 var _race_grid: int = SudokuGenerator.MINI_SIZE
 var _after_levels: Callable = Callable()
 var _tap_guard: Dictionary = {}
 var _last_ui_click_ms: int = 0
 var _click_voices: Array[AudioStreamPlayer] = []
 var _clear_voices: Array[AudioStreamPlayer] = []
+var _treasure_sting: AudioStreamPlayer
+var _overheat_sting: AudioStreamPlayer
+var _relic_sting: AudioStreamPlayer
+var _cyber_sting: AudioStreamPlayer
+var _algae_sting: AudioStreamPlayer
+var _algae_tap_sting: AudioStreamPlayer
+var _leaf_sting: AudioStreamPlayer
 var _click_cursor: int = 0
 var _clear_cursor: int = 0
 
@@ -356,7 +399,14 @@ func _ready() -> void:
 	_board.unit_cleared.connect(_play_completion_sound)
 	_board.correct_placed.connect(_on_correct_placed)
 	_board.mistake_made.connect(_on_mistake_made)
+	_board.aegis_spent.connect(_on_aegis_spent)
+	_board.seal_target.connect(_on_seal_target)
 	_board.poison_solved.connect(_on_poison_solved)
+	_board.sand_cache_solved.connect(_on_sand_cache_solved)
+	_board.ember_overheated.connect(_on_ember_overheated)
+	_board.cyber_unlocked.connect(_on_cyber_unlocked)
+	_board.algae_tapped.connect(_on_algae_tapped)
+	_board.algae_splashed.connect(_on_algae_splashed)
 	_board.combo_cleared.connect(_on_combo_cleared)
 	_board.notes_mode_changed.connect(_on_notes_mode_changed)
 	_board.undo_availability_changed.connect(_on_undo_availability_changed)
@@ -373,6 +423,7 @@ func _ready() -> void:
 	_ambience.finished.connect(_on_ambience_finished)
 	_setup_completion_audio()
 	_setup_click_audio()
+	_setup_mechanic_audio()
 	_setup_menu_audio()
 	_setup_win_audio()
 	_menu.finished.connect(_on_menu_music_finished)
@@ -381,6 +432,7 @@ func _ready() -> void:
 		_background.material = _background.material.duplicate()
 	if _win_bloom.material != null:
 		_win_bloom.material = _win_bloom.material.duplicate()
+	_ensure_mistake_fx()
 	_apply_safe_area()
 	get_viewport().size_changed.connect(_apply_safe_area)
 	_set_board_active(false)
@@ -455,9 +507,11 @@ func _apply_safe_area() -> void:
 	]
 	if is_instance_valid(_shop_screen):
 		screens.append(_shop_screen)
+	_center_play_camera()
 	for screen in screens:
 		_pin_full_rect(screen)
 	_inset_home(left, top, right, bottom)
+	call_deferred("_place_tool_dock")
 
 
 func _pin_full_rect(screen: Control) -> void:
@@ -537,6 +591,7 @@ func _place_home_logo(header: Control) -> void:
 func _process(delta: float) -> void:
 	_stage_clock += delta
 	_apply_stage_mood()
+	_tick_mistake_shake(delta)
 	if not _timer_running:
 		return
 	if _mode == Mode.MINI:
@@ -565,7 +620,13 @@ func _tick_mini_race(delta: float) -> void:
 		_on_mini_times_up()
 
 
+func _on_aegis_spent() -> void:
+	_relics.aegis_ready = false
+	_queue_save_run()
+
+
 func _on_mistake_made(index: int, life_cost: int = 1) -> void:
+	_punch_mistake()
 	_puzzle_mistakes += 1
 	var cost: int = maxi(1, life_cost)
 	if cost > 1:
@@ -575,6 +636,8 @@ func _on_mistake_made(index: int, life_cost: int = 1) -> void:
 		if _relics.last_guard == RelicManager.Guard.SECOND_WIND:
 			_board.spawn_caption("SAFE", index)
 		elif _relics.last_guard == RelicManager.Guard.PHOENIX:
+			_board.undo()
+			_puzzle_mistakes = maxi(0, _puzzle_mistakes - 1)
 			_board.spawn_caption("PHOENIX", index)
 		elif lost > 0:
 			_board.spawn_clock_pop(-lost, index)
@@ -594,12 +657,67 @@ func _on_mistake_made(index: int, life_cost: int = 1) -> void:
 
 
 func _on_poison_solved(index: int) -> void:
+	_play_sting(_leaf_sting)
 	if _mode != Mode.JOURNEY:
 		return
 	var amount: int = _economy.vine_bounty()
 	if amount <= 0:
 		return
 	_board.spawn_gold_pop(amount, index)
+
+
+func _on_sand_cache_solved(index: int) -> void:
+	_play_sting(_treasure_sting)
+	if _mode != Mode.JOURNEY:
+		return
+	var amount: int = _economy.sand_bounty()
+	if amount <= 0:
+		return
+	_board.spawn_gold_pop(amount, index)
+
+
+func _on_ember_overheated() -> void:
+	if _dealing or _journey_failed or _mode == Mode.MINI:
+		return
+	_play_sting(_overheat_sting)
+	var relaxed: bool = _mode == Mode.JOURNEY and _journey_pace == JourneyPace.RELAXED
+	if not _ember_warned:
+		_ember_warned = true
+		_board.spawn_caption("WARNING")
+		_queue_save_run()
+		return
+	_puzzle_mistakes += 1
+	if _mode == Mode.JOURNEY and not relaxed:
+		var lost: int = _relics.on_mistake(1)
+		var note := ""
+		if _relics.last_guard == RelicManager.Guard.SECOND_WIND:
+			note = "SAFE"
+		elif _relics.last_guard == RelicManager.Guard.PHOENIX:
+			note = "PHOENIX"
+		elif lost > 0:
+			note = "−1 LIFE"
+		_begin_overheat(note)
+		_update_status()
+		_queue_save_run()
+		if _relics.lives <= 0:
+			_on_journey_failed()
+		return
+	var score_lost: int = _board.apply_score_penalty(OVERHEAT_SCORE_COST)
+	_begin_overheat("−%d" % score_lost if score_lost > 0 else "")
+	_update_status()
+	_queue_save_run()
+
+
+func _begin_overheat(note: String) -> void:
+	_punch_overheat()
+	if not is_instance_valid(_ember_rush):
+		var rush := EmberRush.new()
+		rush.name = "EmberRush"
+		rush.z_index = 90
+		_game_screen.add_child(rush)
+		rush.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_ember_rush = rush
+	_ember_rush.play(note)
 
 
 func _on_combo_cleared(unit_count: int, _gained: int) -> void:
@@ -655,6 +773,84 @@ func _apply_race_danger_fx(delta: float) -> void:
 	var red := Color(1.0, 0.16, 0.14)
 	var heat: float = _race_danger_mix * lerpf(0.42, 1.0, beat)
 	_status_label.add_theme_color_override("font_color", _chrome.ink.lerp(red, heat))
+
+
+func _ensure_mistake_fx() -> void:
+	if not is_instance_valid(_play_camera):
+		var camera := Camera2D.new()
+		camera.name = "MistakeCamera"
+		camera.enabled = true
+		camera.top_level = true
+		camera.position_smoothing_enabled = false
+		camera.zoom = Vector2.ONE
+		add_child(camera)
+		_play_camera = camera
+		_play_camera.make_current()
+	if not is_instance_valid(_mistake_flash):
+		var flash := CanvasModulate.new()
+		flash.name = "MistakeFlash"
+		flash.color = Color.WHITE
+		add_child(flash)
+		_mistake_flash = flash
+	_center_play_camera()
+
+
+func _center_play_camera() -> void:
+	if not is_instance_valid(_play_camera):
+		return
+	var view: Vector2 = get_viewport_rect().size
+	if view.x < 8.0 or view.y < 8.0:
+		view = Vector2(720.0, 1280.0)
+	_play_camera.position = view * 0.5
+	if _mistake_shake <= 0.0:
+		_play_camera.offset = Vector2.ZERO
+
+
+func _punch_mistake() -> void:
+	_ensure_mistake_fx()
+	_shake_time = MISTAKE_SHAKE_TIME
+	_shake_reach = MISTAKE_SHAKE_PX
+	_mistake_shake = 1.0
+	if _mistake_flash_tween != null and _mistake_flash_tween.is_valid():
+		_mistake_flash_tween.kill()
+	_mistake_flash.color = LAVA_RED
+	_mistake_flash_tween = create_tween()
+	_mistake_flash_tween.tween_interval(MISTAKE_FLASH_HOLD)
+	_mistake_flash_tween.tween_property(_mistake_flash, "color", Color.WHITE, MISTAKE_FLASH_FADE).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+func _punch_overheat() -> void:
+	_ensure_mistake_fx()
+	_shake_time = OVERHEAT_SHAKE_TIME
+	_shake_reach = OVERHEAT_SHAKE_PX
+	_mistake_shake = 1.0
+
+
+func _tick_mistake_shake(delta: float) -> void:
+	if not is_instance_valid(_play_camera) or _mistake_shake <= 0.0:
+		return
+	_mistake_shake = maxf(0.0, _mistake_shake - delta / _shake_time)
+	_center_play_camera()
+	if _mistake_shake <= 0.0:
+		_play_camera.offset = Vector2.ZERO
+		return
+	var falloff: float = _mistake_shake * _mistake_shake
+	var ticks: float = float(Time.get_ticks_msec())
+	var kick := Vector2(sin(ticks * 0.09), cos(ticks * 0.13))
+	_play_camera.offset = kick * (_shake_reach * falloff)
+
+
+func _reset_mistake_fx() -> void:
+	_mistake_shake = 0.0
+	_shake_time = MISTAKE_SHAKE_TIME
+	_shake_reach = MISTAKE_SHAKE_PX
+	if _mistake_flash_tween != null and _mistake_flash_tween.is_valid():
+		_mistake_flash_tween.kill()
+	_mistake_flash_tween = null
+	if is_instance_valid(_mistake_flash):
+		_mistake_flash.color = Color.WHITE
+	if is_instance_valid(_play_camera):
+		_play_camera.offset = Vector2.ZERO
 
 
 func _reset_race_danger_fx() -> void:
@@ -726,7 +922,12 @@ func start_new_game(resume: bool = false) -> void:
 		return
 	if resume and _mode != Mode.MINI and _try_restore_run():
 		_apply_run_relics(false)
+		if _uses_sand_caches() and _board.sand_cache_indices().is_empty():
+			_board.seed_sand_caches(_sand_cache_count())
 		_apply_poison_bounty()
+		_apply_sand_bounty()
+		_apply_ember_pressure(false)
+		_flush_save_run()
 		_timer_running = true
 		_set_play_chrome_locked(false)
 		_set_input_enabled(true)
@@ -753,22 +954,29 @@ func start_new_game(resume: bool = false) -> void:
 	_board.set_mood_sources(_difficulty, _remaining_cells, blanks, true)
 	_hints_left = _hints_budget()
 	_puzzle_hints_used = 0
+	_puzzle_seals_used = 0
 	_puzzle_mistakes = 0
+	_armed_tool = -1
 	_journey_failed = false
 	_last_gold_paid = 0
-	_last_gold_doubled = false
 	_last_gold_vines = 0
+	_last_gold_sand = 0
+	_last_gold_stars = 0
 	_apply_run_relics(true)
 	if _mode == Mode.JOURNEY:
 		_hints_left += _relics.take_pending_hints()
 		_refresh_hint_button()
 	if _uses_algae():
 		_board.seed_algae(SudokuBoard.ALGAE_COVER)
+	if _uses_sand_caches():
+		_board.seed_sand_caches(_sand_cache_count())
 	if _uses_poison():
 		_board.seed_poison()
 	if _uses_cyber_locks():
 		_board.seed_cyber_locks(_cyber_lock_count())
 	_apply_poison_bounty()
+	_apply_sand_bounty()
+	_apply_ember_pressure(true)
 	_flush_save_run()
 	_timer_running = true
 	_refresh_hint_button()
@@ -853,6 +1061,10 @@ func _set_input_enabled(enabled: bool) -> void:
 	_undo_button.disabled = not (enabled and _board.can_undo())
 	_refresh_digit_pad()
 	_refresh_hint_button()
+	if not enabled:
+		_armed_tool = -1
+		_board.seal_aim = -1
+	_refresh_tool_bar()
 
 
 func _on_undo_availability_changed(can_undo: bool) -> void:
@@ -1400,6 +1612,7 @@ func _exit_play(next: Callable) -> void:
 	_board.loud_pops = false
 	_race_clock_flash = 0.0
 	_reset_race_danger_fx()
+	_reset_mistake_fx()
 	_kill_race_chain_motion()
 	_stop_ambience()
 	_stop_win_sound()
@@ -1708,8 +1921,12 @@ func _deal_race_chain() -> void:
 	_board.score = _mini_race_score
 	_board.score_mult = 1.0
 	_board.magnet_enabled = false
+	_board.aegis_ready = false
 	_puzzle_hints_used = 0
+	_puzzle_seals_used = 0
 	_puzzle_mistakes = 0
+	_armed_tool = -1
+	_board.seal_aim = -1
 	_board.queue_redraw()
 	_board.set_mood_sources(_difficulty, _remaining_cells, _blanks_for_current(), true)
 	_hints_left = _hints_budget()
@@ -2056,15 +2273,56 @@ func _record_stars(level: int, earned: int) -> void:
 	_journey_stars[index] = maxi(_journey_stars[index], clampi(earned, 0, 3))
 
 
-func _stars_for_clear() -> int:
-	var stars: int = 0
-	if _puzzle_hints_used <= 0:
-		stars += 1
-	if _puzzle_mistakes <= 0:
-		stars += 1
-	if _elapsed_seconds <= _star_time_limit():
-		stars += 1
-	return stars
+func _capture_stars() -> void:
+	_last_star_seal = _puzzle_seals_used > 0
+	_last_star_hint = _puzzle_hints_used <= 0 and _puzzle_seals_used <= 0
+	_last_star_clean = _puzzle_mistakes <= 0
+	_last_star_clock = _elapsed_seconds <= _star_time_limit()
+	_last_puzzle_stars = int(_last_star_hint) + int(_last_star_clean) + int(_last_star_clock)
+
+
+func _star_marks() -> String:
+	if _last_puzzle_stars <= 0:
+		return "☆☆☆"
+	return _star_glyphs(_last_puzzle_stars)
+
+
+func _star_sentence() -> String:
+	var missed: PackedStringArray = PackedStringArray()
+	if not _last_star_hint:
+		missed.append("a seal" if _last_star_seal else "a hint")
+	if not _last_star_clean:
+		missed.append("a mistake")
+	if not _last_star_clock:
+		missed.append("the clock")
+	if missed.is_empty():
+		return "No hints, no mistakes, and inside the clock, so these stars paid %d gold." % _last_gold_stars
+	if missed.size() == 3:
+		var aid: String = "A seal" if _last_star_seal else "A hint"
+		return "%s, a mistake, and the clock left no star gold." % aid
+	if missed.size() == 1:
+		return "%s, so these stars paid %d gold." % [_star_miss_line(missed[0]), _last_gold_stars]
+	return "%s and %s cost two stars, so the last paid %d gold." % [_star_pair(missed[0]), missed[1], _last_gold_stars]
+
+
+func _star_pair(reason: String) -> String:
+	if reason == "a hint":
+		return "A hint"
+	if reason == "a seal":
+		return "A seal"
+	if reason == "a mistake":
+		return "A mistake"
+	return "The clock"
+
+
+func _star_miss_line(reason: String) -> String:
+	if reason == "a hint":
+		return "A hint was used"
+	if reason == "a seal":
+		return "A seal was used"
+	if reason == "a mistake":
+		return "A mistake landed"
+	return "The clock ran long"
 
 
 func _star_time_limit() -> float:
@@ -2351,6 +2609,7 @@ func _on_shop_slot_pressed(slot: int) -> void:
 	if not _shop.try_buy(slot, _economy, _relics):
 		_fill_shop_buttons()
 		return
+	_play_sting(_relic_sting)
 	_fill_shop_buttons()
 	_save_journey_progress()
 
@@ -2375,6 +2634,10 @@ func _uses_algae() -> bool:
 	return _mode != Mode.MINI and _board.current_style() == SudokuBoard.ArtStyle.WATER
 
 
+func _uses_sand_caches() -> bool:
+	return _mode != Mode.MINI and _board.current_style() == SudokuBoard.ArtStyle.DESERT
+
+
 func _uses_poison() -> bool:
 	return _mode != Mode.MINI and _board.current_style() == SudokuBoard.ArtStyle.FOREST
 
@@ -2388,12 +2651,53 @@ func _cyber_lock_count() -> int:
 	return counts[randi() % counts.size()]
 
 
+func _sand_cache_count() -> int:
+	if _mode == Mode.JOURNEY:
+		return SudokuBoard.SAND_CACHE_MIN + _journey_stage_index(_journey_level)
+	return randi_range(SudokuBoard.SAND_CACHE_MIN, SudokuBoard.SAND_CACHE_MAX)
+
+
+func _uses_ember_pressure() -> bool:
+	return _mode != Mode.MINI and _board.current_style() == SudokuBoard.ArtStyle.EMBER
+
+
+func _ember_overheat_seconds() -> float:
+	var seconds: float
+	if _mode == Mode.JOURNEY:
+		var by_stage: Array[float] = [180.0, 150.0, 120.0]
+		seconds = by_stage[_journey_stage_index(_journey_level)]
+	else:
+		var by_difficulty: Array[float] = [180.0, 150.0, 120.0]
+		seconds = by_difficulty[clampi(int(_difficulty), 0, by_difficulty.size() - 1)]
+	if _mode == Mode.JOURNEY and _journey_pace == JourneyPace.RELAXED:
+		seconds *= 1.25
+	return seconds
+
+
 func _apply_poison_bounty() -> void:
 	if _mode != Mode.JOURNEY or not _uses_poison():
 		_board.set_poison_bounty(0)
 		return
 	_economy.sync_level(_journey_level)
 	_board.set_poison_bounty(_economy.vine_bounty())
+
+
+func _apply_sand_bounty() -> void:
+	if _mode != Mode.JOURNEY or not _uses_sand_caches():
+		_board.set_sand_bounty(0)
+		return
+	_economy.sync_level(_journey_level)
+	_board.set_sand_bounty(_economy.sand_bounty())
+
+
+func _apply_ember_pressure(reset_heat: bool) -> void:
+	if not _uses_ember_pressure():
+		_board.clear_ember_pressure()
+		_ember_warned = false
+		return
+	if reset_heat:
+		_ember_warned = false
+	_board.set_ember_pressure(_ember_overheat_seconds(), reset_heat)
 
 
 func _flash_poison_screen() -> void:
@@ -2417,17 +2721,23 @@ func _flash_poison_screen() -> void:
 func _apply_run_relics(fresh: bool) -> void:
 	_board.score_mult = 1.0
 	_board.magnet_enabled = false
+	_board.aegis_ready = false
+	_board.relay_filling = false
+	_board.seal_aim = -1
+	_armed_tool = -1
 	if _mode != Mode.JOURNEY:
 		_apply_check()
 		_refresh_relic_tray()
+		_refresh_tool_bar()
 		return
-	_board.check_mistakes = true
+	_apply_check()
 	_relics.sync_level(_journey_level)
 	_economy.sync_level(_journey_level)
 	if fresh:
 		_relics.reset_level()
 	_relics.apply_on_deal(_board, fresh)
 	_refresh_relic_tray()
+	_refresh_tool_bar()
 
 
 func _ensure_relic_tray() -> void:
@@ -2467,14 +2777,151 @@ func _refresh_relic_tray() -> void:
 				_play_relic_glyphs[slot].set_look(slot, false)
 				show_any = true
 	_relic_tray.visible = show_any
+	call_deferred("_place_tool_dock")
+
+
+func _ensure_tool_bar() -> void:
+	if is_instance_valid(_tool_bar):
+		return
+	var dock := VBoxContainer.new()
+	dock.name = "ToolDock"
+	dock.alignment = BoxContainer.ALIGNMENT_CENTER
+	dock.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	dock.add_theme_constant_override("separation", 0)
+	dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dock.z_index = 4
+	dock.visible = false
+	var prompt := Label.new()
+	prompt.name = "ToolPrompt"
+	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	prompt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prompt.custom_minimum_size = Vector2(0.0, 24.0)
+	prompt.add_theme_font_size_override("font_size", 18)
+	prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dock.add_child(prompt)
+	var bar := HBoxContainer.new()
+	bar.name = "ToolBoxes"
+	bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	bar.add_theme_constant_override("separation", 12)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tool_buttons.clear()
+	_tool_glyphs.clear()
+	for kind in RelicManager.TOOL_COUNT:
+		var button := Button.new()
+		button.name = "Tool%d" % kind
+		button.custom_minimum_size = Vector2(36.0, 36.0)
+		button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		button.theme_type_variation = &"PlayButton"
+		button.text = ""
+		var glyph := RelicGlyph.new()
+		glyph.name = "Symbol"
+		glyph.custom_minimum_size = Vector2(28.0, 28.0)
+		glyph.position = Vector2(4.0, 4.0)
+		glyph.size = Vector2(28.0, 28.0)
+		glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		glyph.set_look(ShopManager.TOOL_GLYPHS[kind], false)
+		button.add_child(glyph)
+		_arm_tap(button, _on_tool_pressed.bind(kind))
+		bar.add_child(button)
+		_tool_buttons.append(button)
+		_tool_glyphs.append(glyph)
+	dock.add_child(bar)
+	var screen := $GameScreen as Control
+	screen.add_child(dock)
+	if not screen.resized.is_connected(_place_tool_dock):
+		screen.resized.connect(_place_tool_dock)
+	_tool_prompt = prompt
+	_tool_bar = dock
+
+
+## Sits in the gap above the number keys, so neither the grid nor the keys shrink.
+func _place_tool_dock() -> void:
+	if not is_instance_valid(_tool_bar) or not _tool_bar.visible:
+		return
+	var height: float = maxf(_tool_bar.get_combined_minimum_size().y, 36.0)
+	var pad_rect := _number_pad.get_global_rect()
+	if pad_rect.size.x < 1.0:
+		return
+	_tool_bar.size = Vector2(pad_rect.size.x, height)
+	_tool_bar.global_position = Vector2(pad_rect.position.x, pad_rect.position.y - height - 4.0)
+
+
+func _refresh_tool_bar() -> void:
+	_ensure_tool_bar()
+	var seals_on: bool = _mode == Mode.JOURNEY
+	var show_any: bool = false
+	for kind in RelicManager.TOOL_COUNT:
+		if kind >= _tool_buttons.size() or not is_instance_valid(_tool_buttons[kind]):
+			continue
+		var button: Button = _tool_buttons[kind]
+		var count: int = _relics.tool_count(kind) if seals_on else 0
+		var armed: bool = seals_on and _armed_tool == kind and count > 0
+		button.visible = count > 0
+		button.disabled = not _pad_enabled or count <= 0
+		button.text = ""
+		_paint_chrome_button(button, false, armed, false)
+		if kind < _tool_glyphs.size() and is_instance_valid(_tool_glyphs[kind]):
+			_tool_glyphs[kind].set_look(ShopManager.TOOL_GLYPHS[kind], count <= 0)
+		if count > 0:
+			show_any = true
+	if not show_any or not seals_on:
+		_armed_tool = -1
+		if is_instance_valid(_board):
+			_board.seal_aim = -1
+	if is_instance_valid(_tool_prompt):
+		var telling: bool = show_any and _armed_tool >= 0 and _armed_tool < ShopManager.TOOL_USE.size()
+		_tool_prompt.text = ShopManager.TOOL_USE[_armed_tool] if telling else ""
+		_tool_prompt.add_theme_color_override("font_color", _chrome.ink)
+	_tool_bar.visible = show_any
+	call_deferred("_place_tool_dock")
+
+
+func _on_tool_pressed(kind: int) -> void:
+	if _mode != Mode.JOURNEY or _dealing or _journey_failed or _win_screen.visible:
+		return
+	if _relics.tool_count(kind) <= 0:
+		return
+	if _armed_tool == kind:
+		_armed_tool = -1
+		_board.seal_aim = -1
+	else:
+		_armed_tool = kind
+		_board.seal_aim = kind
+	_refresh_tool_bar()
+
+
+func _on_seal_target(index: int) -> void:
+	if _mode != Mode.JOURNEY or _armed_tool < 0 or _dealing or _journey_failed:
+		_armed_tool = -1
+		_board.seal_aim = -1
+		_refresh_tool_bar()
+		return
+	var kind: int = _armed_tool
+	if not _board.seal_has_work(index, kind):
+		_board.spawn_caption("FULL", index)
+		return
+	_relics.take_tool(kind)
+	_puzzle_seals_used += 1
+	_armed_tool = -1
+	_board.seal_aim = -1
+	_board.apply_seal(index, kind)
+	_refresh_tool_bar()
+	_update_status()
+	if not _board.is_cleared():
+		_queue_save_run()
+	_save_journey_progress()
 
 
 func _on_correct_placed() -> void:
 	_emit_ui_click()
 	_try_race_correct_streak()
-	if _mode != Mode.JOURNEY or _board.magnet_filling or _journey_failed:
+	if _mode != Mode.JOURNEY or _board.magnet_filling or _board.relay_filling or _board.seal_filling or _journey_failed:
 		return
-	_relics.on_player_correct()
+	if _relics.on_player_correct() and _board.apply_relay():
+		_relics.consume_relay()
+		if not _board.is_cleared():
+			_queue_save_run()
 
 
 func _stop_win_motion() -> void:
@@ -2686,6 +3133,43 @@ func _try_race_correct_streak() -> void:
 
 func _setup_click_audio() -> void:
 	_click_voices = _make_oneshot_pool(_clicks, CLICK_A, CLICK_B, "UI")
+
+
+func _setup_mechanic_audio() -> void:
+	_treasure_sting = _make_sting("TreasureSting", TREASURE_STREAM)
+	_overheat_sting = _make_sting("OverheatSting", OVERHEAT_STREAM)
+	_relic_sting = _make_sting("RelicSting", RELIC_BUY_STREAM)
+	_cyber_sting = _make_sting("CyberSting", CYBER_UNLOCK_STREAM)
+	_algae_sting = _make_sting("AlgaeSting", ALGAE_SPLASH_STREAM)
+	_algae_tap_sting = _make_sting("AlgaeTapSting", ALGAE_TAP_STREAM)
+	_leaf_sting = _make_sting("LeafSting", LEAF_CLEAR_STREAM)
+
+
+func _make_sting(node_name: String, stream: AudioStream) -> AudioStreamPlayer:
+	var player := AudioStreamPlayer.new()
+	player.name = node_name
+	add_child(player)
+	_prep_oneshot(player, stream, "SFX")
+	return player
+
+
+func _play_sting(player: AudioStreamPlayer) -> void:
+	if not is_instance_valid(player):
+		return
+	player.pitch_scale = 1.0
+	player.play(0.0)
+
+
+func _on_cyber_unlocked(_index: int) -> void:
+	_play_sting(_cyber_sting)
+
+
+func _on_algae_tapped(_index: int) -> void:
+	_play_sting(_algae_tap_sting)
+
+
+func _on_algae_splashed(_index: int) -> void:
+	_play_sting(_algae_sting)
 
 
 func _make_oneshot_pool(first: AudioStreamPlayer, stream_a: AudioStream, stream_b: AudioStream, bus: String) -> Array[AudioStreamPlayer]:
@@ -2930,10 +3414,11 @@ func _sync_buzz_button() -> void:
 
 
 func _sync_settings_hint() -> void:
+	var rule := "Show mistakes paints a number that is not the finished answer."
 	if OS.has_feature("web"):
-		_settings_hint.text = "Buzz is often blocked in the itch.io browser.\nAn Android app can vibrate; iPhone web cannot."
+		_settings_hint.text = "Buzz is often blocked in the itch.io browser.\nAn Android app can vibrate; iPhone web cannot.\n" + rule
 	else:
-		_settings_hint.text = "Feel and sound"
+		_settings_hint.text = "Feel and sound\n" + rule
 
 
 func _toggle_check() -> void:
@@ -2951,9 +3436,6 @@ func _on_check_toggled(enabled: bool) -> void:
 
 
 func _apply_check() -> void:
-	if _mode == Mode.JOURNEY:
-		_board.check_mistakes = true
-		return
 	_board.check_mistakes = _check_mistakes
 
 
@@ -3107,6 +3589,7 @@ func _apply_style_chrome() -> void:
 	_paint_chrome_button(_hint_button, _hints_left <= 0, false, false)
 	_paint_chrome_button(_notes_button, false, _board.notes_mode, false)
 	_refresh_digit_pad()
+	_refresh_tool_bar()
 
 
 func _refresh_digit_pad() -> void:
@@ -3255,22 +3738,22 @@ func _on_board_solved() -> void:
 	_board.lift_mood()
 	_touch_daily_streak()
 	if _mode == Mode.JOURNEY:
-		_last_puzzle_stars = _stars_for_clear()
+		_capture_stars()
 		_record_stars(_journey_level, _last_puzzle_stars)
-		_last_gold_doubled = _relics.has_relic(RelicManager.Relic.COMBO_COIN) and _relics.combo_coin_armed
 		_economy.sync_level(_journey_level)
 		var slip: EconomyManager.Payout = _economy.collect_clear(
 			_puzzle_mistakes,
-			_relics.has_relic(RelicManager.Relic.MIDAS_BAND),
-			_last_gold_doubled,
-			_board.poison_cleared_count()
+			_board.poison_cleared_count(),
+			_board.sand_caches_cleared_count(),
+			_last_puzzle_stars
 		)
 		_last_gold_paid = slip.total
 		_last_gold_clear = slip.clear_reward
 		_last_gold_flawless = slip.flawless_bonus
 		_last_gold_interest = slip.interest
 		_last_gold_vines = slip.vine_bonus
-		_last_gold_doubled = slip.combo_applied
+		_last_gold_sand = slip.sand_bonus
+		_last_gold_stars = slip.star_bonus
 		_journey_run_score += _last_gold_paid
 		if _is_journey_finale():
 			_journey_complete = true
@@ -3374,12 +3857,16 @@ func _on_journey_failed() -> void:
 	_set_play_chrome_locked(true)
 	_last_gold_lost = _economy.take_fail_tax()
 	_save_journey_progress()
+	_board.conceal_level_mechanics()
+	if is_instance_valid(_poison_screen_flash):
+		_poison_screen_flash.color.a = 0.0
 	if _last_gold_lost > 0:
 		_time_label.text = "−%d gold" % _last_gold_lost
 	else:
 		_time_label.text = "Purse was empty."
 	_highscore_label.text = "Gold  ·  %d" % _economy.gold
 	_highscore_label.add_theme_color_override("font_color", COLOR_HIGHSCORE_MUTED)
+	_highscore_label.remove_theme_font_size_override("font_size")
 	await _present_win(_round)
 
 
@@ -3398,6 +3885,7 @@ func _present_win(round_id: int) -> void:
 		_dismiss_win()
 		return
 	_apply_win_copy()
+	_present_win_stars()
 	if _is_journey_finale():
 		_stop_ambience()
 		_ensure_menu_music()
@@ -3437,28 +3925,50 @@ func _dismiss_win() -> void:
 	_win_label.remove_theme_font_size_override("font_size")
 	_yes_button.visible = true
 	_highscore_label.modulate = Color.WHITE
+	_highscore_label.remove_theme_font_size_override("font_size")
+	if is_instance_valid(_win_stars):
+		_win_stars.stop()
 	_set_win_spread(1.0)
 
 
 func _apply_high_score() -> void:
+	_highscore_label.remove_theme_font_size_override("font_size")
 	var key: String = _score_key()
 	var best: int = _high_scores.get(key, 0)
 	var run: int = _journey_run_score if _mode == Mode.JOURNEY else (_mini_clears if _mode == Mode.MINI else _board.score)
 	var slot: String = _score_slot_name()
+	if _mode == Mode.JOURNEY:
+		_highscore_label.add_theme_font_size_override("font_size", 48)
+		_highscore_label.add_theme_color_override("font_color", COLOR_HIGHSCORE)
+		if run > best:
+			_high_scores[key] = run
+			_save_high_scores()
+			_highscore_label.text = "+%d\nNEW BEST" % _last_gold_paid
+		else:
+			_highscore_label.text = "+%d" % _last_gold_paid
+		return
 	if run > best:
 		_high_scores[key] = run
 		_save_high_scores()
 		_highscore_label.text = "NEW HIGHSCORE  ·  %s  ·  %d" % [slot, run]
 		_highscore_label.add_theme_color_override("font_color", COLOR_HIGHSCORE)
-	elif _mode == Mode.JOURNEY:
-		_highscore_label.text = "Run  ·  %d    Best  ·  %d" % [run, best]
-		_highscore_label.add_theme_color_override("font_color", COLOR_HIGHSCORE_MUTED)
 	elif _mode == Mode.MINI:
 		_highscore_label.text = "This race  ·  %d    Best  ·  %d" % [run, best]
 		_highscore_label.add_theme_color_override("font_color", COLOR_HIGHSCORE_MUTED)
 	else:
 		_highscore_label.text = "%s  ·  High score  ·  %d" % [slot, best]
 		_highscore_label.add_theme_color_override("font_color", COLOR_HIGHSCORE_MUTED)
+
+
+func _present_win_stars() -> void:
+	if not is_instance_valid(_win_stars):
+		return
+	if _mode != Mode.JOURNEY or _journey_failed:
+		_win_stars.stop()
+		return
+	var glow: Color = _board.glow_color.lerp(Color(1.0, 0.86, 0.46), 0.58)
+	_win_stars.set_result(_last_puzzle_stars, glow)
+	_win_stars.play()
 
 
 func _score_key() -> String:
@@ -3606,14 +4116,21 @@ func _save_run() -> void:
 	config.set_value(section, "algae", data.get("algae", PackedInt32Array()))
 	config.set_value(section, "poison", data.get("poison", PackedInt32Array()))
 	config.set_value(section, "cyber", data.get("cyber", PackedInt32Array()))
+	config.set_value(section, "sand_caches", data.get("sand_caches", PackedInt32Array()))
+	config.set_value(section, "ember_active", bool(data.get("ember_active", false)))
+	config.set_value(section, "ember_heat", float(data.get("ember_heat", 0.0)))
+	config.set_value(section, "ember_warned", _ember_warned)
 	config.set_value(section, "hints", _hints_left)
 	config.set_value(section, "puzzle_hints", _puzzle_hints_used)
+	config.set_value(section, "puzzle_seals", _puzzle_seals_used)
 	config.set_value(section, "puzzle_mistakes", _puzzle_mistakes)
 	if _mode == Mode.JOURNEY:
 		config.set_value(section, "lives", _relics.lives)
 		config.set_value(section, "combo_streak", _relics.combo_place_streak)
-		config.set_value(section, "combo_armed", _relics.combo_coin_armed)
+		config.set_value(section, "relay_procs", _relics.relay_procs)
+		config.set_value(section, "aegis_ready", _relics.aegis_ready)
 		config.set_value(section, "second_wind", _relics.second_wind_ready)
+		config.set_value(section, "phoenix_spent", _relics.phoenix_spent)
 	config.set_value("prefs", "last_session", _last_session)
 	config.save(SETTINGS_PATH)
 
@@ -3664,6 +4181,9 @@ func _try_restore_run() -> bool:
 		"algae": _read_packed(config, section, "algae"),
 		"poison": _read_packed(config, section, "poison"),
 		"cyber": _read_packed(config, section, "cyber"),
+		"sand_caches": _read_packed(config, section, "sand_caches"),
+		"ember_active": bool(config.get_value(section, "ember_active", false)),
+		"ember_heat": clampf(float(config.get_value(section, "ember_heat", 0.0)), 0.0, 1.0),
 	}
 	if not _board.restore_run(data):
 		_clear_run_section(section)
@@ -3671,12 +4191,16 @@ func _try_restore_run() -> bool:
 	_elapsed_seconds = maxf(0.0, float(config.get_value(section, "elapsed", 0.0)))
 	_hints_left = clampi(int(config.get_value(section, "hints", _hints_budget())), 0, _hints_budget())
 	_puzzle_hints_used = maxi(0, int(config.get_value(section, "puzzle_hints", 0)))
+	_puzzle_seals_used = maxi(0, int(config.get_value(section, "puzzle_seals", 0)))
 	_puzzle_mistakes = maxi(0, int(config.get_value(section, "puzzle_mistakes", 0)))
+	_ember_warned = bool(config.get_value(section, "ember_warned", false))
 	if _mode == Mode.JOURNEY:
 		_relics.lives = clampi(int(config.get_value(section, "lives", _relics.lives_budget())), 0, _relics.lives_budget())
 		_relics.combo_place_streak = maxi(0, int(config.get_value(section, "combo_streak", 0)))
-		_relics.combo_coin_armed = bool(config.get_value(section, "combo_armed", false))
+		_relics.relay_procs = clampi(int(config.get_value(section, "relay_procs", 0)), 0, RelicManager.RELAY_CAP)
+		_relics.aegis_ready = bool(config.get_value(section, "aegis_ready", _relics.has_relic(RelicManager.Relic.STEEL_SHIELD)))
 		_relics.second_wind_ready = bool(config.get_value(section, "second_wind", _relics.has_relic(RelicManager.Relic.SECOND_WIND)))
+		_relics.phoenix_spent = bool(config.get_value(section, "phoenix_spent", _relics.phoenix_spent))
 	_board.set_mood_sources(_difficulty, _remaining_cells, _blanks_for_current(), true)
 	return true
 
@@ -3744,6 +4268,7 @@ func _load_journey_progress() -> void:
 	_relics.phoenix_spent = bool(config.get_value("journey", "phoenix_spent", false))
 	_relics.pending_lives = maxi(0, int(config.get_value("journey", "pending_lives", 0)))
 	_relics.pending_hints = maxi(0, int(config.get_value("journey", "pending_hints", 0)))
+	_relics.apply_tools(String(config.get_value("journey", "tools", "")))
 	_journey_stars = _stars_from_text(String(config.get_value("journey", "stars", "")))
 	_ensure_star_slots()
 	if _journey_progress > _journey_length():
@@ -3771,6 +4296,7 @@ func _save_journey_progress() -> void:
 	config.set_value("journey", "phoenix_spent", _relics.phoenix_spent)
 	config.set_value("journey", "pending_lives", _relics.pending_lives)
 	config.set_value("journey", "pending_hints", _relics.pending_hints)
+	config.set_value("journey", "tools", _relics.tools_to_text())
 	config.set_value("journey", "stars", _stars_to_text())
 	config.save(SETTINGS_PATH)
 
@@ -3838,8 +4364,6 @@ func _apply_win_copy() -> void:
 			_ask_label.text = "Enter %s · %s?" % [next_look.title, next_name]
 		if _relics.shop_pending:
 			_ask_label.text = "Shop, then %s" % _ask_label.text.to_lower()
-		if _last_puzzle_stars > 0:
-			_ask_label.text = "%s\n%s" % [_star_glyphs(_last_puzzle_stars), _ask_label.text]
 		_ask_label.add_theme_color_override("font_color", next_look.ink)
 		_yes_button.text = "Next"
 		_no_button.text = "Menu"
@@ -3870,23 +4394,7 @@ func _cleared_line() -> String:
 	var clock: String = _format_time(_elapsed_seconds)
 	if _mode == Mode.JOURNEY:
 		var look: WorldLook = _journey_look(_journey_level)
-		var gold_line: String = "+%d gold" % _last_gold_paid
-		if _last_gold_doubled:
-			gold_line = "+%d gold ×2" % _last_gold_paid
-		elif _last_gold_flawless > 0 or _last_gold_interest > 0 or _last_gold_vines > 0:
-			var bits: PackedStringArray = PackedStringArray()
-			bits.append("+%d" % _last_gold_clear)
-			if _last_gold_flawless > 0:
-				bits.append("+%d flawless" % _last_gold_flawless)
-			if _last_gold_interest > 0:
-				bits.append("+%d interest" % _last_gold_interest)
-			if _last_gold_vines > 0:
-				bits.append("+%d vines" % _last_gold_vines)
-			gold_line = " · ".join(bits)
-		var stars: String = _star_glyphs(_last_puzzle_stars)
-		if stars.is_empty():
-			return "%s %s in %s · %s" % [look.title, DIFFICULTY_NAMES[_difficulty], clock, gold_line]
-		return "%s %s in %s · %s · %s" % [look.title, DIFFICULTY_NAMES[_difficulty], clock, gold_line, stars]
+		return "%s · %s · %s\n%s" % [look.title, DIFFICULTY_NAMES[_difficulty], clock, _star_sentence()]
 	if _mode == Mode.MINI:
 		return "%s Mini %s in %s · %d pts" % [_world_at(_world_index).title, DIFFICULTY_NAMES[_difficulty], clock, _board.score]
 	return "%s %s cleared in %s · %d pts" % [_world_at(_world_index).title, DIFFICULTY_NAMES[_difficulty], clock, _board.score]
@@ -3897,7 +4405,10 @@ func _update_status() -> void:
 	_status_label.add_theme_color_override("font_color", _chrome.ink)
 	if _mode == Mode.JOURNEY:
 		var look: WorldLook = _journey_look(_journey_level)
-		_status_label.text = "%s · ♥%d · %dg · %s" % [look.title, _relics.lives, _economy.gold, clock]
+		if _board.ember_active():
+			_status_label.text = "HEAT %d%% · ♥%d · %dg · %s" % [int(round(_board.ember_heat * 100.0)), _relics.lives, _economy.gold, clock]
+		else:
+			_status_label.text = "%s · ♥%d · %dg · %s" % [look.title, _relics.lives, _economy.gold, clock]
 	elif _mode == Mode.MINI:
 		var flash: float = clampf(_race_clock_flash, 0.0, 1.0)
 		_status_label.text = "%s  ·  %d pts  ·  %d" % [_format_time(_race_seconds), _mini_race_score, _mini_clears]

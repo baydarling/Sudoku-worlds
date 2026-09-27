@@ -5,6 +5,7 @@ extends Control
 const AlgaePatchScript: GDScript = preload("res://scripts/algae_patch.gd")
 const PoisonVineScript: GDScript = preload("res://scripts/poison_vine.gd")
 const CyberLockScript: GDScript = preload("res://scripts/cyber_lock.gd")
+const SandCacheScript: GDScript = preload("res://scripts/sand_cache.gd")
 
 ## Emitted once every cell is filled in without breaking a Sudoku rule.
 signal solved
@@ -16,7 +17,7 @@ signal digits_changed
 signal score_changed(score: int, streak: int)
 ## Emitted when a row, column, or box is completed correctly.
 signal unit_cleared
-## Emitted when a filled digit matches the puzzle's answer.
+## Emitted when a filled digit is legal on the board right now.
 signal correct_placed
 ## Emitted when pencil-mark mode is switched, including from the keyboard.
 signal notes_mode_changed(enabled: bool)
@@ -25,10 +26,24 @@ signal undo_availability_changed(can_undo: bool)
 ## Emitted when a filled digit does not match the puzzle's answer.
 ## `life_cost` is 2 on a still-active poison cell, otherwise 1.
 signal mistake_made(index: int, life_cost: int)
+## Steel Shield turned away the first clashing digit this puzzle.
+signal aegis_spent
+## The player tapped a cell while a shop seal is armed.
+signal seal_target(index: int)
 ## Emitted when a poison cell is filled with the right digit.
 signal poison_solved(index: int)
 ## Emitted when a Neon cyber lock opens after its row or column is solved.
 signal cyber_unlocked(index: int)
+## Emitted when a Water algae patch is fully cleaned.
+signal algae_cleaned(index: int)
+## Emitted on each algae tap before the patch rips off.
+signal algae_tapped(index: int)
+## Emitted on the tap that starts the rip, so the splash is not delayed.
+signal algae_splashed(index: int)
+## Emitted when a marked Desert cell is solved and its cache is uncovered.
+signal sand_cache_solved(index: int)
+## Emitted whenever Ember's heat meter fills.
+signal ember_overheated
 ## Emitted when one correct digit finishes more than one unit.
 signal combo_cleared(unit_count: int, gained: int)
 
@@ -84,6 +99,12 @@ const POISON_FLASH_LIFE: float = 0.28
 const CYBER_LOCK_MIN: int = 2
 const CYBER_LOCK_MAX: int = 6
 const CYBER_LOCK_TRIES: int = 12
+const SAND_CACHE_MIN: int = 3
+const SAND_CACHE_MAX: int = 5
+const EMBER_CELL_COOL: float = 0.025
+const EMBER_UNIT_COOL: float = 0.12
+const EMBER_MISTAKE_HEAT: float = 0.12
+const EMBER_RESET_HEAT: float = 0.3
 
 
 ## A restore point taken just before a move changes the board.
@@ -199,8 +220,16 @@ var last_place_index: int = -1
 var score_mult: float = 1.0
 ## Journey Magnet relic fills the last empty cell in a row or column.
 var magnet_enabled: bool = false
-## True while Magnet is writing, so Combo Coin ignores auto-fills.
+## True while Magnet is writing, so Relay ignores those fills.
 var magnet_filling: bool = false
+## Steel Shield can still bounce the first clashing digit this puzzle.
+var aegis_ready: bool = false
+## True while Relay is writing, so that fill does not count toward the next Relay.
+var relay_filling: bool = false
+## Armed shop seal: 0 box, 1 row, 2 column, 3 plus. -1 means a tap places a digit.
+var seal_aim: int = -1
+## True while a seal is writing, so those fills do not count as player moves.
+var seal_filling: bool = false
 var _magnet_busy: bool = false
 var _ambient_time: float = 0.0
 ## 0 is the dim board, 1 is the full neon board. It eases toward `_mood_target`.
@@ -216,7 +245,7 @@ var sky_top: Color = Color(0.02, 0.0, 0.04)
 var sky_bottom: Color = Color(0.05, 0.0, 0.08)
 var glow_color: Color = Color(0.96, 0.5, 1.0)
 var haptics_enabled: bool = true
-## When true, digits that break the solution are marked the same way as doubles.
+## When true, a player digit that is not the finished answer is painted red. It is still a legal place.
 var check_mistakes: bool = false:
 	set(value):
 		if check_mistakes == value:
@@ -238,6 +267,14 @@ var _poison_flash: ColorRect
 var _poison_flash_tween: Tween
 ## Neon cyber locks. Overlay nodes stay even after they open.
 var _cyber: Dictionary = {}
+## Desert caches are passive marks: solve the cell normally to uncover one.
+var _sand_caches: Dictionary = {}
+var _sand_bounty: int = 0
+## Ember pressure rises only while the board accepts play.
+var ember_heat: float = 0.0
+var _ember_active: bool = false
+var _ember_rate: float = 0.0
+var _ember_flash: float = 0.0
 
 
 func set_play_enabled(enabled: bool) -> void:
@@ -304,6 +341,7 @@ func _process(delta: float) -> void:
 	_advance_effects(step)
 	_advance_drifts(step)
 	_advance_score_pops(step)
+	_advance_ember_heat(step)
 	queue_redraw()
 
 
@@ -319,6 +357,8 @@ func load_puzzle(puzzle: SudokuGenerator.Puzzle) -> void:
 	clear_algae()
 	clear_poison()
 	clear_cyber_locks()
+	clear_sand_caches()
+	clear_ember_pressure()
 	score = 0
 	_streak = 0
 	magnet_filling = false
@@ -351,6 +391,9 @@ func export_run() -> Dictionary:
 		"algae": algae_indices(),
 		"poison": poison_indices(),
 		"cyber": cyber_indices(),
+		"sand_caches": sand_cache_indices(),
+		"ember_active": _ember_active,
+		"ember_heat": ember_heat,
 	}
 
 
@@ -390,6 +433,9 @@ func restore_run(data: Dictionary) -> bool:
 	_restore_algae(data.get("algae", PackedInt32Array()))
 	_restore_poison(data.get("poison", PackedInt32Array()))
 	_restore_cyber_locks(data.get("cyber", PackedInt32Array()))
+	_restore_sand_caches(data.get("sand_caches", PackedInt32Array()))
+	_ember_active = bool(data.get("ember_active", false))
+	ember_heat = clampf(float(data.get("ember_heat", 0.0)), 0.0, 1.0)
 	return true
 
 
@@ -791,6 +837,13 @@ func write_digit(digit: int) -> void:
 	var value: int = 0 if _values[_selected] == digit else digit
 	if _values[_selected] == value:
 		return
+	if value != 0 and aegis_ready and _placement_clashes(_selected, value):
+		aegis_ready = false
+		aegis_spent.emit()
+		_pulse_cell(_selected)
+		spawn_caption("AEGIS", _selected)
+		_haptic(HAPTIC_CLEAR_MS, HAPTIC_CLEAR_AMP)
+		return
 	_push_undo()
 	var stake: int = poison_stake(_selected)
 	var completed_before: int = _completed_unit_mask()
@@ -834,38 +887,162 @@ func is_cleared() -> bool:
 	return _is_solved()
 
 
-## Journey Oracle Eye: two random empties become clues. No score, no combo.
-func oracle_fill(count: int) -> void:
+## Dawn Band: pencil every legal candidate onto empty cells. Does not place digits.
+func dawn_mark() -> void:
+	if _locked or _solution.size() != cell_count:
+		return
+	var marked: int = 0
+	for index in cell_count:
+		if not _relic_target(index, false):
+			continue
+		var mask: int = _candidate_mask(index)
+		if mask == 0:
+			continue
+		_notes[index] = mask
+		marked += 1
+	if marked <= 0:
+		return
+	spawn_caption("DAWN")
+	_finish_board_change()
+
+
+## Oracle Eye: note the true digit on the empties with the fewest choices.
+func oracle_note(count: int) -> void:
 	if _locked or _solution.size() != cell_count or count <= 0:
 		return
-	var empties: Array[int] = []
-	for index in cell_count:
-		if _givens[index] != 0 or _values[index] != 0:
-			continue
-		if has_algae(index):
-			continue
-		if is_poison_active(index):
-			continue
-		if is_cyber_locked(index):
-			continue
-		if _solution[index] < 1 or _solution[index] > grid_size:
-			continue
-		empties.append(index)
-	empties.shuffle()
-	var filled: int = mini(count, empties.size())
-	for slot in filled:
-		var index: int = empties[slot]
-		_givens[index] = _solution[index]
-		_values[index] = _solution[index]
-		_notes[index] = 0
-		_erase_note_from_peers(index, _values[index])
-		var pulse := LockPulse.new()
-		pulse.index = index
-		_locks.append(pulse)
-	if filled <= 0:
+	var marked: int = 0
+	var last: int = -1
+	while marked < count:
+		var index: int = _spotlight_true_note()
+		if index < 0:
+			break
+		last = index
+		marked += 1
+	if marked <= 0:
 		return
-	_update_conflicts()
+	spawn_caption("ORACLE", last)
 	_finish_board_change()
+
+
+## Relay: fill one cell that has a single legal digit, or note the truth on the next best cell.
+func apply_relay() -> bool:
+	if not _play_enabled or _locked or _solution.size() != cell_count:
+		return false
+	var index: int = _find_single_candidate_cell()
+	if index >= 0:
+		_push_undo()
+		var digit: int = _solution[index]
+		var stake: int = poison_stake(index)
+		var completed_before: int = _completed_unit_mask()
+		_values[index] = digit
+		last_place_index = index
+		_erase_note_from_peers(index, digit)
+		_update_conflicts()
+		relay_filling = true
+		_cue_move_audio(index, completed_before)
+		_play_place_effect(index, completed_before)
+		_award_unit_points(index, completed_before, stake)
+		spawn_caption("RELAY", index)
+		_finish_board_change()
+		if magnet_enabled and not _locked:
+			apply_magnet_chain()
+		relay_filling = false
+		return true
+	var noted: int = _spotlight_true_note()
+	if noted < 0:
+		return false
+	spawn_caption("RELAY", noted)
+	_finish_board_change()
+	return true
+
+
+func seal_has_work(origin: int, kind: int) -> bool:
+	if not _play_enabled or _locked or _solution.size() != cell_count:
+		return false
+	if origin < 0 or origin >= cell_count or kind < 0 or kind > 3:
+		return false
+	for index in _seal_cells(origin, kind):
+		if _seal_can_fill(index):
+			return true
+	return false
+
+
+## Fills the box, row, column, or plus around `origin` with the answer. One undo step.
+func apply_seal(origin: int, kind: int) -> bool:
+	if not _play_enabled or _locked or _solution.size() != cell_count:
+		return false
+	if origin < 0 or origin >= cell_count or kind < 0 or kind > 3:
+		return false
+	var targets: Array[int] = []
+	for index in _seal_cells(origin, kind):
+		if not _seal_can_fill(index):
+			continue
+		targets.append(index)
+	if targets.is_empty():
+		return false
+	_push_undo()
+	seal_filling = true
+	for index in targets:
+		var digit: int = _solution[index]
+		var stake: int = poison_stake(index)
+		var completed_before: int = _completed_unit_mask()
+		_values[index] = digit
+		last_place_index = index
+		_erase_note_from_peers(index, digit)
+		_update_conflicts()
+		_cue_move_audio(index, completed_before)
+		_play_place_effect(index, completed_before)
+		_award_unit_points(index, completed_before, stake)
+		if _is_solved():
+			break
+	var captions: Array[String] = ["BOX", "ROW", "COLUMN", "PLUS"]
+	spawn_caption(captions[kind], origin)
+	seal_filling = false
+	_finish_board_change()
+	if magnet_enabled and not _locked:
+		apply_magnet_chain()
+	return true
+
+
+func _seal_can_fill(index: int) -> bool:
+	if index < 0 or index >= cell_count:
+		return false
+	if _givens[index] != 0:
+		return false
+	if has_algae(index) or is_poison_active(index) or is_cyber_locked(index):
+		return false
+	if _solution[index] < 1 or _solution[index] > grid_size:
+		return false
+	return _values[index] != _solution[index]
+
+
+@warning_ignore("integer_division")
+func _seal_cells(origin: int, kind: int) -> Array[int]:
+	var cells: Array[int] = []
+	var row: int = origin / grid_size
+	var column: int = origin % grid_size
+	if kind == 0:
+		var box_row: int = row / box_height
+		var box_column: int = column / box_width
+		for box_r in box_height:
+			for box_c in box_width:
+				cells.append((box_row * box_height + box_r) * grid_size + box_column * box_width + box_c)
+		return cells
+	if kind == 1:
+		for step in grid_size:
+			cells.append(row * grid_size + step)
+		return cells
+	if kind == 2:
+		for step in grid_size:
+			cells.append(step * grid_size + column)
+		return cells
+	for step in grid_size:
+		cells.append(row * grid_size + step)
+	for step in grid_size:
+		if step == row:
+			continue
+		cells.append(step * grid_size + column)
+	return cells
 
 
 ## Journey Magnet: last empty cell in a row or column fills itself.
@@ -948,6 +1125,7 @@ func _magnet_cell_ready(index: int) -> bool:
 func _finish_board_change() -> void:
 	_refresh_cyber_locks(true)
 	_sync_poison_visuals()
+	_sync_sand_cache_visuals(true)
 	queue_redraw()
 	_emit_progress()
 	if _is_solved() and not _locked:
@@ -989,6 +1167,82 @@ func _pick_hint_cell_filtered(skip_poison: bool) -> int:
 	return best_index
 
 
+func _placement_clashes(index: int, digit: int) -> bool:
+	if digit < 1 or digit > grid_size or index < 0 or index >= cell_count:
+		return false
+	for other in cell_count:
+		if other == index:
+			continue
+		if _values[other] == digit and _is_peer_of(other, index):
+			return true
+	return false
+
+
+func _relic_target(index: int, allow_covered: bool) -> bool:
+	if index < 0 or index >= cell_count:
+		return false
+	if _givens[index] != 0 or _values[index] != 0:
+		return false
+	if has_algae(index) or is_poison_active(index) or is_cyber_locked(index):
+		return false
+	if not allow_covered and has_sand_cache(index):
+		return false
+	if _solution[index] < 1 or _solution[index] > grid_size:
+		return false
+	return true
+
+
+func _find_single_candidate_cell() -> int:
+	for index in cell_count:
+		if not _relic_target(index, true):
+			continue
+		var mask: int = _candidate_mask(index)
+		if _count_mask_bits(mask) != 1:
+			continue
+		if _lowest_digit(mask) == _solution[index]:
+			return index
+	return -1
+
+
+## Pencils only the true digit. Skips a cell that already shows just that digit.
+func _spotlight_true_note() -> int:
+	var best: int = -1
+	var best_count: int = grid_size + 1
+	for index in cell_count:
+		if not _relic_target(index, false):
+			continue
+		var truth: int = 1 << (_solution[index] - 1)
+		if _notes[index] == truth:
+			continue
+		var count: int = _count_mask_bits(_candidate_mask(index))
+		if count <= 0:
+			count = grid_size
+		if count < best_count:
+			best_count = count
+			best = index
+	if best < 0:
+		return -1
+	_notes[best] = 1 << (_solution[best] - 1)
+	_pulse_cell(best)
+	return best
+
+
+func _lowest_digit(mask: int) -> int:
+	for digit in range(1, grid_size + 1):
+		if mask & (1 << (digit - 1)) != 0:
+			return digit
+	return 0
+
+
+func _pulse_cell(index: int) -> void:
+	if index < 0 or index >= cell_count:
+		return
+	var pulse := LockPulse.new()
+	pulse.index = index
+	_locks.append(pulse)
+	queue_redraw()
+
+
 func _candidate_mask(index: int) -> int:
 	var mask: int = _digit_mask()
 	for other in cell_count:
@@ -1023,6 +1277,7 @@ func undo() -> void:
 	_update_conflicts()
 	_refresh_cyber_locks(false)
 	_sync_poison_visuals()
+	_sync_sand_cache_visuals(false)
 	queue_redraw()
 	_emit_progress()
 	undo_availability_changed.emit(not _undo_stack.is_empty())
@@ -1062,6 +1317,7 @@ func _write_note(digit: int) -> void:
 		_notes[_selected] ^= 1 << (digit - 1)
 	_refresh_cyber_locks(false)
 	_sync_poison_visuals()
+	_sync_sand_cache_visuals(false)
 	queue_redraw()
 	_emit_progress()
 
@@ -1120,6 +1376,7 @@ func _layout_hit_cells() -> void:
 	_layout_algae()
 	_layout_poison()
 	_layout_cyber_locks()
+	_layout_sand_caches()
 
 
 func has_algae(index: int) -> bool:
@@ -1142,6 +1399,10 @@ func clear_algae() -> void:
 		if is_instance_valid(patch):
 			if patch.is_connected(&"cleaned", _on_algae_cleaned):
 				patch.disconnect(&"cleaned", _on_algae_cleaned)
+			if patch.is_connected(&"tapped", _on_algae_tapped):
+				patch.disconnect(&"tapped", _on_algae_tapped)
+			if patch.is_connected(&"splashed", _on_algae_splashed):
+				patch.disconnect(&"splashed", _on_algae_splashed)
 			patch.queue_free()
 	_algae.clear()
 	for child in get_children():
@@ -1189,6 +1450,8 @@ func _place_algae(index: int) -> void:
 	patch.z_index = 24
 	patch.show_behind_parent = false
 	patch.connect(&"cleaned", _on_algae_cleaned)
+	patch.connect(&"tapped", _on_algae_tapped)
+	patch.connect(&"splashed", _on_algae_splashed)
 	add_child(patch)
 	_algae[index] = patch
 
@@ -1207,9 +1470,18 @@ func _layout_algae() -> void:
 		patch.size = Vector2(cell_size, cell_size)
 
 
+func _on_algae_tapped(index: int) -> void:
+	algae_tapped.emit(index)
+
+
+func _on_algae_splashed(index: int) -> void:
+	algae_splashed.emit(index)
+
+
 func _on_algae_cleaned(index: int) -> void:
 	_algae.erase(index)
 	_haptic(HAPTIC_PLACE_MS, HAPTIC_PLACE_AMP)
+	algae_cleaned.emit(index)
 	if _play_enabled and not _locked and index >= 0 and index < cell_count:
 		_selected = index
 	queue_redraw()
@@ -1298,7 +1570,7 @@ func _can_mark_poison(index: int) -> bool:
 		return false
 	if _givens[index] != 0 or _values[index] != 0:
 		return false
-	if has_algae(index) or has_poison(index) or has_cyber(index):
+	if has_algae(index) or has_poison(index) or has_cyber(index) or has_sand_cache(index):
 		return false
 	if _solution.size() == cell_count and (_solution[index] < 1 or _solution[index] > grid_size):
 		return false
@@ -1479,7 +1751,7 @@ func _can_mark_cyber(index: int) -> bool:
 		return false
 	if _givens[index] != 0 or _values[index] != 0:
 		return false
-	if has_algae(index) or has_poison(index) or has_cyber(index):
+	if has_algae(index) or has_poison(index) or has_cyber(index) or has_sand_cache(index):
 		return false
 	if _solution.size() == cell_count and (_solution[index] < 1 or _solution[index] > grid_size):
 		return false
@@ -1610,6 +1882,189 @@ func _deny_cyber(index: int) -> void:
 	_haptic(HAPTIC_PLACE_MS, HAPTIC_PLACE_AMP)
 
 
+func has_sand_cache(index: int) -> bool:
+	return _sand_caches.has(index) and is_instance_valid(_sand_caches[index] as Node)
+
+
+func sand_cache_indices() -> PackedInt32Array:
+	var packed := PackedInt32Array()
+	for key in _sand_caches.keys():
+		var index: int = int(key)
+		if has_sand_cache(index):
+			packed.append(index)
+	packed.sort()
+	return packed
+
+
+func sand_caches_cleared_count() -> int:
+	var cleared: int = 0
+	for key in _sand_caches.keys():
+		var index: int = int(key)
+		if has_sand_cache(index) and _cell_matches_solution(index):
+			cleared += 1
+	return cleared
+
+
+func set_sand_bounty(amount: int) -> void:
+	_sand_bounty = maxi(0, amount)
+	for key in _sand_caches.keys():
+		var cache: Node = _sand_caches[key] as Node
+		if is_instance_valid(cache):
+			cache.set("bounty", _sand_bounty)
+			if cache is CanvasItem:
+				(cache as CanvasItem).queue_redraw()
+
+
+func clear_sand_caches() -> void:
+	for key in _sand_caches.keys():
+		var cache: Node = _sand_caches[key] as Node
+		if is_instance_valid(cache):
+			cache.queue_free()
+	_sand_caches.clear()
+
+
+func seed_sand_caches(count: int = -1) -> void:
+	clear_sand_caches()
+	if cell_count <= 0:
+		return
+	var take: int = randi_range(SAND_CACHE_MIN, SAND_CACHE_MAX) if count < 0 else count
+	var empties: Array[int] = []
+	for index in cell_count:
+		if _can_mark_sand_cache(index):
+			empties.append(index)
+	empties.shuffle()
+	take = mini(maxi(0, take), empties.size())
+	for slot in take:
+		_place_sand_cache(empties[slot])
+	_layout_sand_caches()
+	_sync_sand_cache_visuals(false)
+
+
+func _can_mark_sand_cache(index: int) -> bool:
+	if index < 0 or index >= cell_count:
+		return false
+	if _givens[index] != 0 or _values[index] != 0:
+		return false
+	if has_algae(index) or has_poison(index) or has_cyber(index) or has_sand_cache(index):
+		return false
+	if _solution.size() == cell_count and (_solution[index] < 1 or _solution[index] > grid_size):
+		return false
+	return true
+
+
+func _restore_sand_caches(indices: Variant) -> void:
+	clear_sand_caches()
+	var packed := PackedInt32Array()
+	if indices is PackedInt32Array:
+		packed = indices
+	for index in packed:
+		if index < 0 or index >= cell_count or _givens[index] != 0:
+			continue
+		_place_sand_cache(index)
+	_layout_sand_caches()
+	_sync_sand_cache_visuals(false)
+
+
+func _place_sand_cache(index: int) -> void:
+	if has_sand_cache(index):
+		return
+	var cache: Control = SandCacheScript.new() as Control
+	cache.set("cell_index", index)
+	cache.set("bounty", _sand_bounty)
+	cache.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cache.z_index = 7
+	cache.show_behind_parent = false
+	add_child(cache)
+	_sand_caches[index] = cache
+
+
+func _layout_sand_caches() -> void:
+	var grid := _get_grid_rect()
+	if grid.size.x <= 1.0:
+		return
+	var cell_size: float = grid.size.x / float(grid_size)
+	for key in _sand_caches.keys():
+		var index: int = int(key)
+		var cache: Control = _sand_caches[key] as Control
+		if not is_instance_valid(cache):
+			continue
+		cache.position = _get_cell_position(grid, cell_size, index)
+		cache.size = Vector2(cell_size, cell_size)
+
+
+func _sync_sand_cache_visuals(announce: bool) -> void:
+	for key in _sand_caches.keys():
+		var index: int = int(key)
+		var cache: Node = _sand_caches[key] as Node
+		if not is_instance_valid(cache):
+			continue
+		var resolved: bool = _cell_matches_solution(index)
+		var was_resolved: bool = bool(cache.get("resolved"))
+		cache.call("set_resolved", resolved)
+		if announce and resolved and not was_resolved:
+			sand_cache_solved.emit(index)
+			spawn_caption("TREASURE", index)
+
+
+func set_ember_pressure(seconds_to_overheat: float, reset_heat: bool = true) -> void:
+	_ember_active = seconds_to_overheat > 0.0
+	_ember_rate = 1.0 / maxf(seconds_to_overheat, 1.0) if _ember_active else 0.0
+	if reset_heat:
+		ember_heat = 0.0
+	_ember_flash = 0.0
+	queue_redraw()
+
+
+func clear_ember_pressure() -> void:
+	_ember_active = false
+	_ember_rate = 0.0
+	ember_heat = 0.0
+	_ember_flash = 0.0
+	queue_redraw()
+
+
+## Unfinished world marks use a high draw order, so they would sit on the results screen.
+func conceal_level_mechanics() -> void:
+	clear_algae()
+	clear_poison()
+	clear_cyber_locks()
+	clear_sand_caches()
+	clear_ember_pressure()
+
+
+func ember_active() -> bool:
+	return _ember_active
+
+
+func apply_score_penalty(amount: int) -> int:
+	var lost: int = mini(maxi(0, amount), score)
+	if lost <= 0:
+		return 0
+	score -= lost
+	score_changed.emit(score, _streak)
+	return lost
+
+
+func _advance_ember_heat(delta: float) -> void:
+	if _ember_flash > 0.0:
+		_ember_flash = maxf(0.0, _ember_flash - delta * 2.5)
+	if not _ember_active or not _play_enabled or _locked or _ember_rate <= 0.0:
+		return
+	ember_heat = minf(1.0, ember_heat + delta * _ember_rate)
+	if ember_heat < 1.0:
+		return
+	ember_heat = EMBER_RESET_HEAT
+	_ember_flash = 1.0
+	_haptic(HAPTIC_CLEAR_MS, HAPTIC_CLEAR_AMP)
+	ember_overheated.emit()
+
+
+func _cool_ember(amount: float) -> void:
+	if not _ember_active or amount <= 0.0:
+		return
+	ember_heat = maxf(0.0, ember_heat - amount)
+
+
 func _on_hit_cell_gui_input(event: InputEvent, index: int) -> void:
 	if not _play_enabled or _locked:
 		return
@@ -1620,6 +2075,10 @@ func _on_hit_cell_gui_input(event: InputEvent, index: int) -> void:
 	elif event is InputEventScreenTouch:
 		tapped = (event as InputEventScreenTouch).pressed
 	if not tapped:
+		return
+	if seal_aim >= 0:
+		seal_target.emit(index)
+		accept_event()
 		return
 	if has_algae(index):
 		return
@@ -1776,6 +2235,7 @@ func _draw() -> void:
 	_draw_line_drifts()
 	_draw_conflict_motes(grid, cell_size, fx)
 	_draw_outer_glow(board)
+	_draw_ember_heat(board, grid)
 	_draw_score_total(board, grid)
 	_draw_score_pops(fx)
 
@@ -1860,6 +2320,59 @@ func _draw_score_total(board: Rect2, grid: Rect2) -> void:
 		var streak_color := color.lerp(Color.WHITE, 0.35)
 		draw_string(font, streak_pos + Vector2(0.0, 1.5), streak_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, shadow)
 		draw_string(font, streak_pos, streak_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, streak_color)
+
+
+func _draw_ember_heat(board: Rect2, grid: Rect2) -> void:
+	if not _ember_active:
+		return
+	var lip_height: float = board.end.y - grid.end.y
+	var bar_height: float = minf(clampf(lip_height * 0.62, 16.0, 26.0), lip_height * 0.78)
+	var bar := Rect2(
+		Vector2(grid.position.x, grid.end.y + (lip_height - bar_height) * 0.55),
+		Vector2(grid.size.x, bar_height)
+	)
+	var pulse: float = 0.5 + 0.5 * sin(_ambient_time * lerpf(3.0, 8.0, ember_heat))
+	draw_rect(bar, Color(0.07, 0.012, 0.0, 0.94), true)
+	var filled: float = bar.size.x * ember_heat
+	if filled > 1.0:
+		var body := Rect2(bar.position, Vector2(filled, bar.size.y))
+		draw_rect(body, Color(0.62, 0.06, 0.0, 0.96), true)
+		draw_rect(Rect2(body.position, Vector2(filled, bar.size.y * 0.62)), Color(1.0, 0.34, 0.04, 0.95), true)
+		draw_rect(Rect2(body.position, Vector2(filled, bar.size.y * 0.28)), Color(1.0, 0.82, 0.28, 0.92), true)
+		_draw_ember_tongues(bar, filled, bar_height)
+	var edge := Color(1.0, 0.38, 0.05, 0.55 + pulse * 0.25)
+	draw_rect(bar, edge, false, maxf(1.6, bar_height * 0.1))
+	if ember_heat >= 0.72:
+		var hot := edge
+		hot.a = (ember_heat - 0.72) * (0.85 + pulse * 0.3)
+		draw_rect(bar.grow(2.0 + pulse * 2.0), hot, false, 2.0)
+
+
+func _draw_ember_tongues(bar: Rect2, filled: float, bar_height: float) -> void:
+	var step: float = 18.0
+	var x: float = bar.position.x + step * 0.45
+	var index: int = 0
+	var end_x: float = bar.position.x + filled - 3.0
+	while x < end_x:
+		var wave: float = sin(_ambient_time * (8.0 + float(index % 3) * 2.0) + float(index) * 1.7)
+		var height: float = bar_height * (0.55 + 0.5 * (0.5 + 0.5 * wave)) * lerpf(0.7, 1.2, ember_heat)
+		var width: float = step * (0.34 + 0.1 * sin(_ambient_time * 13.0 + float(index) * 0.8))
+		var tip := Vector2(x + sin(_ambient_time * 10.0 + float(index)) * 2.4, bar.position.y - height)
+		var outer := PackedVector2Array([
+			tip,
+			Vector2(x + width, bar.position.y + 2.0),
+			Vector2(x - width, bar.position.y + 2.0),
+		])
+		var flame := Color(1.0, 0.42, 0.05, 0.92).lerp(Color(1.0, 0.9, 0.4, 0.95), 0.5 + 0.5 * wave)
+		draw_colored_polygon(outer, flame)
+		var core := PackedVector2Array([
+			tip + Vector2(0.0, height * 0.42),
+			Vector2(x + width * 0.32, bar.position.y + 1.0),
+			Vector2(x - width * 0.32, bar.position.y + 1.0),
+		])
+		draw_colored_polygon(core, Color(1.0, 0.96, 0.72, 0.88))
+		x += step
+		index += 1
 
 
 func _draw_score_pops(fx: float = -1.0) -> void:
@@ -2045,6 +2558,9 @@ func _draw_effect_fills(grid: Rect2, cell_size: float) -> void:
 			var light := _vivid.neon
 			light.a = strength * (0.26 + 0.4 * lit)
 			draw_rect(Rect2(_get_cell_position(grid, cell_size, sweep.cells[slot]), cell), light, true)
+	if _ember_flash > 0.0:
+		var flash := Color(1.0, 0.12, 0.015, 0.34 * _ember_flash)
+		draw_rect(grid, flash, true)
 
 
 func _draw_effect_rings(grid: Rect2, cell_size: float, fx: float) -> void:
@@ -2192,8 +2708,6 @@ func _first_selectable_cell() -> int:
 
 func _play_place_effect(index: int, completed_before: int) -> void:
 	if _conflicts[index]:
-		return
-	if not _solution.is_empty() and _values[index] != _solution[index]:
 		if loud_pops:
 			_haptic(HAPTIC_CLEAR_MS, HAPTIC_CLEAR_AMP)
 		return
@@ -2204,12 +2718,15 @@ func _play_place_effect(index: int, completed_before: int) -> void:
 	var cleared: bool = false
 	for unit_index in _units.size():
 		var bit: int = 1 << unit_index
-		if (completed_after & bit) != 0 and (completed_before & bit) == 0:
-			var sweep := UnitSweep.new()
-			sweep.cells = _units[unit_index].duplicate()
-			_sweeps.append(sweep)
-			call_deferred("_spawn_line_drift", sweep.cells)
-			cleared = true
+		if (completed_after & bit) == 0 or (completed_before & bit) != 0:
+			continue
+		if not _unit_matches_solution(_units[unit_index]):
+			continue
+		var sweep := UnitSweep.new()
+		sweep.cells = _units[unit_index].duplicate()
+		_sweeps.append(sweep)
+		call_deferred("_spawn_line_drift", sweep.cells)
+		cleared = true
 	if cleared:
 		_haptic(HAPTIC_CLEAR_MS, HAPTIC_CLEAR_AMP)
 	else:
@@ -2217,11 +2734,11 @@ func _play_place_effect(index: int, completed_before: int) -> void:
 
 
 func _cue_move_audio(index: int, completed_before: int) -> void:
-	if index < 0 or index >= cell_count or _solution.size() != cell_count:
+	if index < 0 or index >= cell_count or _values[index] == 0 or _conflicts[index]:
 		return
-	if _values[index] == 0 or _values[index] != _solution[index]:
-		return
-	if _cleared_correct_unit(completed_before):
+	var cleared_unit: bool = _cleared_correct_unit(completed_before)
+	_cool_ember(EMBER_UNIT_COOL if cleared_unit else EMBER_CELL_COOL)
+	if cleared_unit:
 		unit_cleared.emit()
 		return
 	correct_placed.emit()
@@ -2269,14 +2786,15 @@ static func pulse_device(duration_ms: int, amplitude: float) -> void:
 func _award_unit_points(index: int, completed_before: int, stake: int = 1) -> void:
 	var move_stake: int = maxi(1, stake)
 	var wrong: bool = _conflicts[index]
-	if not wrong and not _solution.is_empty():
-		wrong = _values[index] != _solution[index]
+	if seal_filling and index < _solution.size() and _values[index] == _solution[index]:
+		wrong = false
 	if wrong:
 		_break_streak(index)
-		if not _solution.is_empty() and _values[index] != _solution[index]:
-			mistake_made.emit(index, move_stake)
-			if move_stake > 1:
-				flash_poison_miss()
+		if _ember_active:
+			ember_heat = minf(1.0, ember_heat + EMBER_MISTAKE_HEAT)
+		mistake_made.emit(index, move_stake)
+		if move_stake > 1:
+			flash_poison_miss()
 		return
 	var completed_after: int = _completed_unit_mask()
 	var gained_any: bool = false
@@ -2298,15 +2816,16 @@ func _award_unit_points(index: int, completed_before: int, stake: int = 1) -> vo
 		unit_count += 1
 		_spawn_score_pop(unit, gained, _streak)
 		gained_any = true
-	if move_stake > 1:
+	var vine_cleared: bool = move_stake > 1 and (_solution.is_empty() or _values[index] == _solution[index])
+	if vine_cleared:
 		poison_solved.emit(index)
-	if not gained_any and move_stake > 1 and _poison_bounty <= 0:
+	if not gained_any and vine_cleared and _poison_bounty <= 0:
 		var bonus: int = int(round(float(UNIT_POINTS) * maxf(score_mult, 0.5))) * move_stake
 		score += bonus
 		gained_total += bonus
 		_spawn_cell_score_pop(index, bonus, move_stake)
 		gained_any = true
-	elif move_stake > 1 and _poison_bounty <= 0:
+	elif vine_cleared and _poison_bounty <= 0:
 		_spawn_poison_tag(index)
 	if unit_count >= 2:
 		_spawn_combo_caption(unit_count, index)
@@ -3010,9 +3529,20 @@ func _lock_scale(index: int) -> float:
 	return 1.0
 
 
+## A repeat is always painted. Show mistakes also paints a digit that is not the finished answer.
+func _paint_as_mistake(index: int) -> bool:
+	if _conflicts[index]:
+		return true
+	if not check_mistakes or _solution.size() != cell_count:
+		return false
+	if _givens[index] != 0 or _values[index] == 0:
+		return false
+	return _values[index] != _solution[index]
+
+
 ## A slow wobble on a repeated digit. The cell and the grid stay still.
 func _conflict_shake(index: int, cell_size: float) -> Vector2:
-	if not _conflicts[index]:
+	if not _paint_as_mistake(index):
 		return Vector2.ZERO
 	var phase: float = float(index) * 1.37
 	var across: float = sin(_ambient_time * 4.4 + phase)
@@ -3022,7 +3552,7 @@ func _conflict_shake(index: int, cell_size: float) -> Vector2:
 
 func _draw_conflict_motes(grid: Rect2, cell_size: float, fx: float) -> void:
 	for index in cell_count:
-		if not _conflicts[index] or _values[index] == 0:
+		if not _paint_as_mistake(index) or _values[index] == 0:
 			continue
 		var center: Vector2 = _get_cell_position(grid, cell_size, index) + Vector2(cell_size, cell_size) * 0.5
 		center += _conflict_shake(index, fx)
@@ -3053,7 +3583,7 @@ func _build_sparkles() -> void:
 
 
 func _get_highlight(index: int) -> Color:
-	if _conflicts[index]:
+	if _paint_as_mistake(index):
 		return COLOR_CONFLICT_CELL
 	if _selected < 0:
 		return COLOR_NONE
@@ -3068,12 +3598,12 @@ func _get_highlight(index: int) -> Color:
 
 
 func _get_text_color(index: int) -> Color:
-	if _conflicts[index]:
+	if _paint_as_mistake(index):
 		return COLOR_CONFLICT_TEXT
 	return _c_given() if _givens[index] != 0 else _c_player()
 
 
-## Flags every cell whose digit is repeated inside its row, column or box.
+## Flags a digit only when it is already repeated in its row, column, or box.
 func _update_conflicts() -> void:
 	_conflicts.fill(false)
 	for unit in _units:
@@ -3087,13 +3617,6 @@ func _update_conflicts() -> void:
 				_conflicts[first_seen[value]] = true
 			else:
 				first_seen[value] = index
-	if not check_mistakes or _solution.size() != cell_count:
-		return
-	for index in cell_count:
-		if _givens[index] != 0 or _values[index] == 0:
-			continue
-		if _values[index] != _solution[index]:
-			_conflicts[index] = true
 
 
 func _is_solved() -> bool:
