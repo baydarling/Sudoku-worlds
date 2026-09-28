@@ -106,6 +106,16 @@ theme_override_colors/font_color = Color(0.66, 0.52, 0.78, 1)
 theme_override_font_sizes/font_size = 28
 text = "Relaxed"
 
+[node name="PaceHint" type="Label" parent="Center/VBox"]
+custom_minimum_size = Vector2(440, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.66, 0.52, 0.78, 1)
+theme_override_font_sizes/font_size = 16
+text = "Standard is the full path.
+Relaxed eases each puzzle and gives more time."
+horizontal_alignment = 1
+autowrap_mode = 3
+
 [node name="Spacer2" type="Control" parent="Center/VBox"]
 custom_minimum_size = Vector2(0, 8)
 layout_mode = 2

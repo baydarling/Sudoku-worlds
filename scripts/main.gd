@@ -89,6 +89,13 @@ const MINI_HINTS_BY_DIFFICULTY: Array[int] = [2, 1, 1]
 const WIDE_HINTS_BY_DIFFICULTY: Array[int] = [2, 2, 1]
 ## Optional star clocks by Easy / Medium / Hard. Relaxed adds half again.
 const STAR_TIME_LIMITS: Array[float] = [240.0, 480.0, 720.0]
+## One journey is 15 puzzles × 3 stars. Sudoku Master takes ten of those.
+const JOURNEYS_FOR_MASTER: int = 10
+const RANK_ANIM_CAP: int = 9
+const RANK_NAMES: Array[String] = [
+	"Novice", "Solver", "Analyst", "Scholar", "Logician",
+	"Expert", "Virtuoso", "Champion", "Grandmaster", "Sudoku Master"
+]
 const MISTAKE_SHAKE_TIME: float = 0.32
 const MISTAKE_SHAKE_PX: float = 8.0
 const OVERHEAT_SHAKE_TIME: float = 0.5
@@ -178,7 +185,7 @@ var _chrome: Chrome = Chrome.new()
 @onready var _profile_button: Button = $MainMenu/Footer/FooterRow/ProfileButton
 @onready var _board_button: Button = $MainMenu/Footer/FooterRow/BoardButton
 @onready var _profile_menu: Control = $ProfileMenu
-@onready var _profile_stats: Label = $ProfileMenu/Center/VBox/Stats
+@onready var _profile_stats: RichTextLabel = $ProfileMenu/Center/VBox/Stats
 @onready var _profile_worlds_button: Button = $ProfileMenu/Center/VBox/WorldsButton
 @onready var _profile_back_button: Button = $ProfileMenu/Center/VBox/BackButton
 @onready var _board_menu: Control = $BoardMenu
@@ -222,12 +229,20 @@ var _economy: EconomyManager = EconomyManager.new()
 var _shop: ShopManager = ShopManager.new()
 var _race: RaceModeManager = RaceModeManager.new()
 var _journey_stars: PackedInt32Array = PackedInt32Array()
+var _rank_stars: int = 0
 var _puzzle_hints_used: int = 0
 var _puzzle_seals_used: int = 0
 var _puzzle_mistakes: int = 0
 ## The first full heat bar this puzzle only warns. The next one is the overheat.
 var _ember_warned: bool = false
 var _last_puzzle_stars: int = 0
+var _last_rank_up: bool = false
+var _last_rank_name: String = ""
+var _last_rank_fill: int = 0
+var _level_stars_before: int = 0
+var _journey_rank_seen: int = -1
+var _rank_meter: RankMeter
+var _win_rank: RankMeter
 var _last_gold_paid: int = 0
 var _last_gold_clear: int = 0
 var _last_gold_flawless: int = 0
@@ -253,6 +268,12 @@ var _relic_tray: HBoxContainer
 var _play_relic_glyphs: Array[RelicGlyph] = []
 var _tool_bar: VBoxContainer
 var _tool_prompt: Label
+var _world_rule: PanelContainer
+var _world_rule_label: Label
+var _world_rule_plate: StyleBoxFlat
+var _world_rule_tween: Tween
+## Bit for each world the player has already been told about.
+var _world_rules_seen: int = 0
 var _tool_buttons: Array[Button] = []
 var _tool_glyphs: Array[RelicGlyph] = []
 var _armed_tool: int = -1
@@ -341,6 +362,7 @@ func _ready() -> void:
 	_merge_race_high_scores()
 	_load_journey_progress()
 	_load_prefs()
+	_journey_rank_seen = _rank_stars
 	_refresh_journey_buttons()
 	_refresh_streak_label()
 	_main_menu.modulate.a = 0.0
@@ -868,6 +890,7 @@ func start_new_game(resume: bool = false) -> void:
 	if _dealing:
 		return
 	_dealing = true
+	_hide_world_rule()
 	_reset_new_confirm()
 	if not (_mode == Mode.MINI and _mini_chaining):
 		_kill_race_chain_motion()
@@ -933,6 +956,7 @@ func start_new_game(resume: bool = false) -> void:
 		_set_input_enabled(true)
 		_refresh_hint_button()
 		_update_status()
+		_offer_world_rule()
 		_dealing = false
 		return
 	if not resume:
@@ -981,6 +1005,7 @@ func start_new_game(resume: bool = false) -> void:
 	_timer_running = true
 	_refresh_hint_button()
 	_update_status()
+	_offer_world_rule()
 	if _mode == Mode.MINI and _mini_chaining:
 		_set_play_chrome_locked(true)
 		_set_input_enabled(false)
@@ -1448,6 +1473,8 @@ func _on_new_journey_pressed() -> void:
 	_economy.reset()
 	_relics.reset_run()
 	_journey_failed = false
+	_reset_journey_map_stars()
+	_save_journey_progress()
 	_arm_game()
 	await _start_journey(1, false)
 	await _settle_game()
@@ -1614,6 +1641,7 @@ func _exit_play(next: Callable) -> void:
 	_reset_race_danger_fx()
 	_reset_mistake_fx()
 	_kill_race_chain_motion()
+	_hide_world_rule()
 	_stop_ambience()
 	_stop_win_sound()
 	_stop_win_motion()
@@ -1662,6 +1690,7 @@ func _enter_journey() -> void:
 	_hide_reset(_win_screen)
 	_hide_shop_screen()
 	_refresh_journey_buttons()
+	_play_journey_rank()
 	await _reveal(_journey_menu, _journey_items())
 
 
@@ -2105,6 +2134,9 @@ func _journey_items() -> Array[Control]:
 	items.append(_levels_button)
 	items.append(_journey_menu.get_node("Center/VBox/PaceLabel") as Control)
 	items.append(_pace_row)
+	var pace_hint: Control = _journey_menu.get_node_or_null("Center/VBox/PaceHint") as Control
+	if pace_hint != null:
+		items.append(pace_hint)
 	items.append(_journey_back_button)
 	return items
 
@@ -2172,7 +2204,7 @@ func _refresh_journey_buttons() -> void:
 		_confirm_new_journey = false
 		_continue_button.text = "Continue"
 		_continue_button.add_theme_color_override("font_color", Color(0.66, 0.52, 0.78))
-		_journey_hint.text = "The journey is finished.\nTake a rest."
+		_journey_hint.text = "The journey is finished.\nRank · %s" % _rank_name(_rank_stars)
 		_journey_hint.add_theme_color_override("font_color", Color(0.66, 0.52, 0.78))
 		_new_journey_button.text = "New Game"
 		_new_journey_button.add_theme_color_override("font_color", Color(0.86, 0.9, 1.0))
@@ -2238,6 +2270,7 @@ func _rebuild_journey_map() -> void:
 			row.add_theme_color_override("font_color", look.ink)
 		else:
 			row.add_theme_color_override("font_color", Color(0.66, 0.52, 0.78, 0.86))
+	_refresh_rank_meter()
 
 
 func _map_star_cell(level: int) -> String:
@@ -2248,6 +2281,27 @@ func _map_star_cell(level: int) -> String:
 	if stars <= 0:
 		return "◯◯◯" if current else "☆☆☆"
 	return _star_glyphs(stars)
+
+
+func _reset_journey_map_stars() -> void:
+	_ensure_star_slots()
+	for index in _journey_stars.size():
+		_journey_stars[index] = -1
+
+
+func _clear_leftover_map_stars() -> void:
+	if _journey_progress > 1:
+		return
+	_ensure_star_slots()
+	var leftover: bool = false
+	for index in range(1, _journey_stars.size()):
+		if _journey_stars[index] > 0:
+			leftover = true
+			break
+	if not leftover:
+		return
+	_reset_journey_map_stars()
+	_save_journey_progress()
 
 
 func _ensure_star_slots() -> void:
@@ -2269,8 +2323,152 @@ func _stars_at(level: int) -> int:
 
 func _record_stars(level: int, earned: int) -> void:
 	_ensure_star_slots()
+	var before: int = _rank_stars
+	_level_stars_before = before
 	var index: int = clampi(level - 1, 0, _journey_stars.size() - 1)
-	_journey_stars[index] = maxi(_journey_stars[index], clampi(earned, 0, 3))
+	var gained: int = clampi(earned, 0, 3)
+	_journey_stars[index] = maxi(_journey_stars[index], gained)
+	_rank_stars += gained
+	_note_rank(before)
+
+
+func _note_rank(before: int) -> void:
+	var stars: int = _rank_stars
+	_last_rank_up = _rank_index(stars) > _rank_index(before)
+	_last_rank_name = _rank_name(stars)
+	_last_rank_fill = _rank_fill(stars)
+
+
+func _rank_mark(index: int) -> int:
+	var journey: int = _star_cap()
+	var safe: int = clampi(index, 0, RANK_NAMES.size() - 1)
+	if safe >= RANK_NAMES.size() - 1:
+		return JOURNEYS_FOR_MASTER * journey
+	return safe * journey
+
+
+func _rank_marks() -> PackedInt32Array:
+	var marks := PackedInt32Array()
+	for index in RANK_NAMES.size():
+		marks.append(_rank_mark(index))
+	return marks
+
+
+func _rank_span(index: int) -> int:
+	var safe: int = clampi(index, 0, RANK_NAMES.size() - 1)
+	if safe >= RANK_NAMES.size() - 1:
+		return maxi(1, _rank_mark(safe) - _rank_mark(safe - 1))
+	return maxi(1, _rank_mark(safe + 1) - _rank_mark(safe))
+
+
+func _rank_index(stars: int) -> int:
+	var safe: int = maxi(0, stars)
+	var index: int = 0
+	for step in RANK_NAMES.size():
+		if safe >= _rank_mark(step):
+			index = step
+	return index
+
+
+func _rank_name(stars: int) -> String:
+	return RANK_NAMES[_rank_index(stars)]
+
+
+func _rank_fill(stars: int) -> int:
+	var safe: int = maxi(0, stars)
+	var index: int = _rank_index(safe)
+	if index >= RANK_NAMES.size() - 1:
+		return _rank_span(index)
+	return safe - _rank_mark(index)
+
+
+func _rank_line() -> String:
+	if _last_rank_up:
+		return "Rank up · %s" % _last_rank_name
+	var span: int = _rank_span(_rank_index(_rank_stars))
+	if _last_rank_fill >= span:
+		return _last_rank_name
+	return "%s · %d/%d" % [_last_rank_name, _last_rank_fill, span]
+
+
+func _refresh_rank_meter() -> void:
+	if not is_instance_valid(_journey_menu):
+		return
+	var vbox: VBoxContainer = _journey_menu.get_node_or_null("Center/VBox") as VBoxContainer
+	if vbox == null:
+		return
+	var meter: RankMeter = vbox.get_node_or_null("RankMeter") as RankMeter
+	if meter == null:
+		meter = RankMeter.new()
+		meter.name = "RankMeter"
+		meter.custom_minimum_size = Vector2(440.0, 40.0)
+		meter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		vbox.add_child(meter)
+	var anchor: Node = vbox.get_node_or_null("Map")
+	if _journey_complete:
+		var hint: Node = vbox.get_node_or_null("Hint")
+		if hint != null:
+			anchor = hint
+	if anchor != null:
+		vbox.move_child(meter, mini(anchor.get_index() + 1, vbox.get_child_count() - 1))
+	if _journey_rank_seen < 0 or _journey_rank_seen >= _rank_stars:
+		meter.show_total(_rank_stars, RANK_NAMES, _rank_marks())
+	_rank_meter = meter
+
+
+func _refresh_rank_button() -> void:
+	if not is_instance_valid(_profile_button):
+		return
+	var caption: Label = _profile_button.get_node_or_null("Col/Caption") as Label
+	if caption != null:
+		caption.text = _rank_name(_rank_stars)
+		caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var icon: FooterIcon = _profile_button.get_node_or_null("Col/Icon") as FooterIcon
+	if icon != null and icon.kind != FooterIcon.Kind.STAR:
+		icon.kind = FooterIcon.Kind.STAR
+		icon.queue_redraw()
+
+
+func _rank_menu_hint() -> String:
+	var stars: int = _rank_stars
+	var index: int = _rank_index(stars)
+	if index >= RANK_NAMES.size() - 1:
+		return "Every star kept. This is the last rank."
+	return "%d / %d stars toward %s" % [_rank_fill(stars), _rank_span(index), RANK_NAMES[index + 1]]
+
+
+func _rank_catalog() -> String:
+	var current: int = _rank_index(_rank_stars)
+	var lines: PackedStringArray = PackedStringArray()
+	for index in RANK_NAMES.size():
+		var need: int = _rank_mark(index)
+		var label: String = RANK_NAMES[index] if need == 0 else "%s  ·  %d" % [RANK_NAMES[index], need]
+		var color: String = "9e94bc"
+		if index == current:
+			color = "eed070"
+			label = "★  %s" % label
+		elif index < current:
+			color = "d2d6eb"
+		lines.append("[color=#%s]%s[/color]" % [color, label])
+	return "\n".join(lines)
+
+
+func _play_journey_rank() -> void:
+	if not is_instance_valid(_rank_meter):
+		return
+	_journey_rank_seen = _play_rank_meter(_rank_meter, _journey_rank_seen, 0.42)
+
+
+func _play_rank_meter(meter: RankMeter, seen: int, delay: float) -> int:
+	var stars: int = _rank_stars
+	if seen >= 0 and stars > seen:
+		var from: int = seen
+		if stars - from > RANK_ANIM_CAP:
+			from = stars - RANK_ANIM_CAP
+		meter.show_total(stars, RANK_NAMES, _rank_marks(), from, delay)
+	else:
+		meter.show_total(stars, RANK_NAMES, _rank_marks())
+	return stars
 
 
 func _capture_stars() -> void:
@@ -2845,6 +3043,138 @@ func _place_tool_dock() -> void:
 		return
 	_tool_bar.size = Vector2(pad_rect.size.x, height)
 	_tool_bar.global_position = Vector2(pad_rect.position.x, pad_rect.position.y - height - 4.0)
+	_place_world_rule()
+
+
+func _world_rule_line(style: SudokuBoard.ArtStyle) -> String:
+	match style:
+		SudokuBoard.ArtStyle.DESERT:
+			return "Chests sit on empty cells.\nFill the cell and it opens."
+		SudokuBoard.ArtStyle.WATER:
+			return "Algae covers a cell.\nTap it three times to clear it."
+		SudokuBoard.ArtStyle.NIGHT:
+			return "Some cells are locked.\nFinish their row or column."
+		SudokuBoard.ArtStyle.FOREST:
+			if _mode == Mode.JOURNEY:
+				return "Vines are dangerous.\nA miss there costs two lives."
+			return "Vines pay extra.\nClear one and the score doubles."
+		SudokuBoard.ArtStyle.EMBER:
+			return "The board heats up over time.\nThe first full bar only warns."
+		_:
+			return ""
+
+
+func _offer_world_rule() -> void:
+	if _mode == Mode.MINI:
+		_hide_world_rule()
+		return
+	var style: SudokuBoard.ArtStyle = _board.current_style()
+	var line: String = _world_rule_line(style)
+	var shift: int = int(style)
+	if style == SudokuBoard.ArtStyle.FOREST and _mode == Mode.JOURNEY:
+		shift = 5
+	var bit: int = 1 << shift
+	if line.is_empty() or (_world_rules_seen & bit) != 0:
+		_hide_world_rule()
+		return
+	_world_rules_seen |= bit
+	_save_prefs()
+	_show_world_rule(line)
+
+
+func _ensure_world_rule() -> void:
+	if is_instance_valid(_world_rule):
+		return
+	var card := PanelContainer.new()
+	card.name = "WorldRule"
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.z_index = 8
+	card.visible = false
+	var plate := StyleBoxFlat.new()
+	plate.bg_color = Color(0.07, 0.03, 0.1, 0.94)
+	plate.border_color = Color(0.93, 0.78, 0.42, 1.0)
+	plate.set_border_width_all(2)
+	plate.set_corner_radius_all(16)
+	plate.content_margin_left = 16
+	plate.content_margin_right = 16
+	plate.content_margin_top = 8
+	plate.content_margin_bottom = 8
+	card.add_theme_stylebox_override("panel", plate)
+	_world_rule_plate = plate
+	var line := Label.new()
+	line.name = "Line"
+	line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	line.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	line.add_theme_font_override("font", preload("res://ui/fonts/Nunito-ExtraBold.ttf"))
+	line.add_theme_font_size_override("font_size", 22)
+	line.add_theme_color_override("font_color", Color(0.97, 0.95, 0.99))
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(line)
+	var screen := $GameScreen as Control
+	screen.add_child(card)
+	if not screen.resized.is_connected(_place_world_rule):
+		screen.resized.connect(_place_world_rule)
+	if not _board.resized.is_connected(_place_world_rule):
+		_board.resized.connect(_place_world_rule)
+	_world_rule = card
+	_world_rule_label = line
+
+
+func _show_world_rule(line: String) -> void:
+	_ensure_world_rule()
+	_world_rule_label.text = line
+	if _world_rule_plate != null:
+		_world_rule_plate.bg_color = Color(_chrome.fill.r, _chrome.fill.g, _chrome.fill.b, 0.94)
+		_world_rule_plate.border_color = _chrome.border
+	_world_rule.visible = true
+	_world_rule.modulate.a = 0.0
+	_place_world_rule()
+	call_deferred("_place_world_rule")
+	if _world_rule_tween != null and _world_rule_tween.is_valid():
+		_world_rule_tween.kill()
+	_world_rule_tween = create_tween()
+	_world_rule_tween.tween_property(_world_rule, "modulate:a", 1.0, 0.22)
+	_world_rule_tween.tween_interval(5.2)
+	_world_rule_tween.tween_property(_world_rule, "modulate:a", 0.0, 0.45)
+	_world_rule_tween.tween_callback(_finish_world_rule)
+
+
+func _place_world_rule() -> void:
+	if not is_instance_valid(_world_rule) or not _world_rule.visible or not is_instance_valid(_world_rule_label):
+		return
+	var grid := _board.grid_global_rect()
+	if grid.size.x < 8.0:
+		return
+	var width: float = minf(grid.size.x - 12.0, _game_screen.get_global_rect().size.x - 32.0)
+	_world_rule_label.custom_minimum_size = Vector2(width - 36.0, 0.0)
+	var height: float = maxf(_world_rule.get_combined_minimum_size().y, 44.0)
+	_world_rule.size = Vector2(width, height)
+	var y: float = grid.position.y - height - 8.0
+	var top_bar := _status_label.get_parent() as Control
+	if top_bar != null:
+		var timer_bottom: float = top_bar.get_global_rect().end.y
+		var gap: float = grid.position.y - timer_bottom
+		if gap > height + 16.0:
+			y = grid.position.y - height - 8.0
+		else:
+			y = timer_bottom + maxf(4.0, (gap - height) * 0.5)
+			y = minf(y, grid.position.y - height - 4.0)
+	_world_rule.global_position = Vector2(grid.position.x + (grid.size.x - width) * 0.5, y)
+
+
+func _finish_world_rule() -> void:
+	_world_rule_tween = null
+	if is_instance_valid(_world_rule):
+		_world_rule.visible = false
+
+
+func _hide_world_rule() -> void:
+	if _world_rule_tween != null and _world_rule_tween.is_valid():
+		_world_rule_tween.kill()
+		_world_rule_tween = null
+	if is_instance_valid(_world_rule):
+		_world_rule.visible = false
 
 
 func _refresh_tool_bar() -> void:
@@ -3758,6 +4088,7 @@ func _on_board_solved() -> void:
 		if _is_journey_finale():
 			_journey_complete = true
 			_journey_progress = 0
+			_reset_journey_map_stars()
 		else:
 			_journey_complete = false
 			_journey_progress = _journey_level + 1
@@ -3871,6 +4202,7 @@ func _on_journey_failed() -> void:
 
 
 func _present_win(round_id: int) -> void:
+	_hide_world_rule()
 	_win_screen.visible = true
 	_win_screen.mouse_filter = Control.MOUSE_FILTER_STOP
 	_win_dim.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -3928,6 +4260,8 @@ func _dismiss_win() -> void:
 	_highscore_label.remove_theme_font_size_override("font_size")
 	if is_instance_valid(_win_stars):
 		_win_stars.stop()
+	if is_instance_valid(_win_rank):
+		_win_rank.visible = false
 	_set_win_spread(1.0)
 
 
@@ -3965,10 +4299,44 @@ func _present_win_stars() -> void:
 		return
 	if _mode != Mode.JOURNEY or _journey_failed:
 		_win_stars.stop()
+		if is_instance_valid(_win_rank):
+			_win_rank.visible = false
 		return
 	var glow: Color = _board.glow_color.lerp(Color(1.0, 0.86, 0.46), 0.58)
 	_win_stars.set_result(_last_puzzle_stars, glow)
 	_win_stars.play()
+	_present_win_rank()
+
+
+func _ensure_win_rank() -> RankMeter:
+	if is_instance_valid(_win_rank):
+		return _win_rank
+	if not is_instance_valid(_win_stars):
+		return null
+	var vbox: VBoxContainer = _win_stars.get_parent() as VBoxContainer
+	if vbox == null:
+		return null
+	var meter := RankMeter.new()
+	meter.name = "WinRank"
+	meter.custom_minimum_size = Vector2(520.0, 40.0)
+	meter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	meter.visible = false
+	vbox.add_child(meter)
+	vbox.move_child(meter, _win_stars.get_index() + 1)
+	_win_rank = meter
+	return meter
+
+
+func _present_win_rank() -> void:
+	var meter: RankMeter = _ensure_win_rank()
+	if meter == null:
+		return
+	meter.visible = true
+	var stars: int = _rank_stars
+	if _level_stars_before < stars:
+		meter.show_total(stars, RANK_NAMES, _rank_marks(), _level_stars_before, 0.48)
+	else:
+		meter.show_total(stars, RANK_NAMES, _rank_marks())
 
 
 func _score_key() -> String:
@@ -4271,6 +4639,10 @@ func _load_journey_progress() -> void:
 	_relics.apply_tools(String(config.get_value("journey", "tools", "")))
 	_journey_stars = _stars_from_text(String(config.get_value("journey", "stars", "")))
 	_ensure_star_slots()
+	if config.has_section_key("journey", "rank_stars"):
+		_rank_stars = maxi(0, int(config.get_value("journey", "rank_stars", 0)))
+	else:
+		_rank_stars = _star_total()
 	if _journey_progress > _journey_length():
 		_journey_complete = true
 	if _journey_complete:
@@ -4280,7 +4652,9 @@ func _load_journey_progress() -> void:
 		_journey_run_score = 0
 		_economy.reset()
 		_relics.reset_run()
+		_reset_journey_map_stars()
 		_save_journey_progress()
+	_clear_leftover_map_stars()
 
 
 func _save_journey_progress() -> void:
@@ -4298,6 +4672,7 @@ func _save_journey_progress() -> void:
 	config.set_value("journey", "pending_hints", _relics.pending_hints)
 	config.set_value("journey", "tools", _relics.tools_to_text())
 	config.set_value("journey", "stars", _stars_to_text())
+	config.set_value("journey", "rank_stars", _rank_stars)
 	config.save(SETTINGS_PATH)
 
 
@@ -4313,6 +4688,7 @@ func _load_prefs() -> void:
 		_streak_days = maxi(0, int(config.get_value("prefs", "streak_days", 0)))
 		_streak_date = String(config.get_value("prefs", "streak_date", ""))
 		_puzzles_cleared = maxi(0, int(config.get_value("prefs", "puzzles_cleared", 0)))
+		_world_rules_seen = maxi(0, int(config.get_value("prefs", "world_rule_copy", 0)))
 	_apply_haptics()
 	_apply_audio_mix()
 	_apply_check()
@@ -4330,6 +4706,7 @@ func _save_prefs() -> void:
 	config.set_value("prefs", "streak_days", _streak_days)
 	config.set_value("prefs", "streak_date", _streak_date)
 	config.set_value("prefs", "puzzles_cleared", _puzzles_cleared)
+	config.set_value("prefs", "world_rule_copy", _world_rules_seen)
 	config.save(SETTINGS_PATH)
 
 
@@ -4394,7 +4771,7 @@ func _cleared_line() -> String:
 	var clock: String = _format_time(_elapsed_seconds)
 	if _mode == Mode.JOURNEY:
 		var look: WorldLook = _journey_look(_journey_level)
-		return "%s · %s · %s\n%s" % [look.title, DIFFICULTY_NAMES[_difficulty], clock, _star_sentence()]
+		return "%s · %s · %s\n%s\n%s" % [look.title, DIFFICULTY_NAMES[_difficulty], clock, _star_sentence(), _rank_line()]
 	if _mode == Mode.MINI:
 		return "%s Mini %s in %s · %d pts" % [_world_at(_world_index).title, DIFFICULTY_NAMES[_difficulty], clock, _board.score]
 	return "%s %s cleared in %s · %d pts" % [_world_at(_world_index).title, DIFFICULTY_NAMES[_difficulty], clock, _board.score]
@@ -4477,7 +4854,7 @@ func _prepare_race_menu() -> void:
 	_race_wide_button.visible = false
 	var hint := _race_menu.get_node_or_null("Center/VBox/Hint") as Label
 	if hint != null:
-		hint.text = "60 seconds. 4×4 warms up, then 6×6 spikes in. Clears add +19 / +29. Wrong −4s."
+		hint.text = "Solve as fast as you can."
 
 
 func _merge_race_high_scores() -> void:
@@ -4488,6 +4865,7 @@ func _merge_race_high_scores() -> void:
 
 
 func _refresh_home_cta() -> void:
+	_refresh_rank_button()
 	if not is_instance_valid(_journey_button):
 		return
 	var can_continue: bool = not _journey_complete and _journey_progress >= 1
@@ -4562,19 +4940,19 @@ func _touch_daily_streak(flush: bool = true) -> void:
 
 
 func _refresh_profile() -> void:
+	var title: Label = _profile_menu.get_node_or_null("Center/VBox/Title") as Label
+	if title != null:
+		title.text = "RANKS"
+	var hint: Label = _profile_menu.get_node_or_null("Center/VBox/Hint") as Label
+	if hint != null:
+		hint.text = _rank_menu_hint()
 	var streak: int = _visible_streak()
 	var streak_line: String = "1 day streak" if streak == 1 else "%d day streak" % streak
 	var puzzles: String = "1 puzzle cleared" if _puzzles_cleared == 1 else "%d puzzles cleared" % _puzzles_cleared
-	var path: String
-	if not _journey_complete and _journey_progress >= 1:
-		var look: WorldLook = _journey_look(_journey_progress)
-		path = "Journey  ·  Level %d  ·  %s" % [_journey_progress, look.title]
-	else:
-		path = "Journey  ·  ready to begin"
-	var race_best: int = int(_high_scores.get("mini_race", 0))
-	var journey_best: int = int(_high_scores.get("journey", 0))
-	_profile_stats.text = "%s\n%s\n%s\n%s\nJourney stars  ·  %d / %d\nBest journey  ·  %d\nRace  ·  %d" % [
-		streak_line, puzzles, path, _relics.catalog_line(), _star_total(), _star_cap(), journey_best, race_best
+	_profile_stats.bbcode_enabled = true
+	_profile_stats.add_theme_font_size_override("normal_font_size", 22)
+	_profile_stats.text = "%s\n[color=#6b6280]%s\n%s\n%s[/color]" % [
+		_rank_catalog(), streak_line, puzzles, _relics.catalog_line()
 	]
 
 

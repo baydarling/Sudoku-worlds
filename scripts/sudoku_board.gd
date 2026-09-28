@@ -68,6 +68,10 @@ const POP_SEPARATION: float = 52.0
 const STREAK_BREAK_LIFE: float = 0.9
 
 const LOCK_DURATION: float = 0.42
+const ORACLE_STAGGER: float = 0.34
+const ORACLE_LIFE: float = 0.92
+## A finished line shares this many motes. A double or triple must not multiply it by every cell.
+const BURST_CAP: int = 36
 const CONFLICT_MOTE_COUNT: int = 3
 ## The light crosses the finished unit, then the whole glow fades away.
 const SWEEP_TRAVEL_TIME: float = 0.8
@@ -117,6 +121,13 @@ class Snapshot extends RefCounted:
 ## A correct placement: the cell flashes and a ring expands from it.
 class LockPulse extends RefCounted:
 	var index: int = -1
+	var age: float = 0.0
+
+
+## Oracle Eye revealing one true pencil mark. Negative age is the wait before this cell.
+class OracleFlash extends RefCounted:
+	var index: int = -1
+	var digit: int = 0
 	var age: float = 0.0
 
 
@@ -194,6 +205,7 @@ var _notes: Array[int] = []
 var _conflicts: Array[bool] = []
 var _undo_stack: Array[Snapshot] = []
 var _locks: Array[LockPulse] = []
+var _oracle: Array[OracleFlash] = []
 var _sweeps: Array[UnitSweep] = []
 var _score_pops: Array[ScorePop] = []
 ## Points for this puzzle. A clean row, column, or box adds more on a streak.
@@ -912,11 +924,17 @@ func oracle_note(count: int) -> void:
 		return
 	var marked: int = 0
 	var last: int = -1
+	_oracle.clear()
 	while marked < count:
-		var index: int = _spotlight_true_note()
+		var index: int = _spotlight_true_note(false)
 		if index < 0:
 			break
 		last = index
+		var flash := OracleFlash.new()
+		flash.index = index
+		flash.digit = _solution[index]
+		flash.age = -float(marked) * ORACLE_STAGGER
+		_oracle.append(flash)
 		marked += 1
 	if marked <= 0:
 		return
@@ -1205,7 +1223,7 @@ func _find_single_candidate_cell() -> int:
 
 
 ## Pencils only the true digit. Skips a cell that already shows just that digit.
-func _spotlight_true_note() -> int:
+func _spotlight_true_note(pulse: bool = true) -> int:
 	var best: int = -1
 	var best_count: int = grid_size + 1
 	for index in cell_count:
@@ -1223,7 +1241,8 @@ func _spotlight_true_note() -> int:
 	if best < 0:
 		return -1
 	_notes[best] = 1 << (_solution[best] - 1)
-	_pulse_cell(best)
+	if pulse:
+		_pulse_cell(best)
 	return best
 
 
@@ -2000,7 +2019,7 @@ func _sync_sand_cache_visuals(announce: bool) -> void:
 			continue
 		var resolved: bool = _cell_matches_solution(index)
 		var was_resolved: bool = bool(cache.get("resolved"))
-		cache.call("set_resolved", resolved)
+		cache.call("set_resolved", resolved, announce)
 		if announce and resolved and not was_resolved:
 			sand_cache_solved.emit(index)
 			spawn_caption("TREASURE", index)
@@ -2231,6 +2250,7 @@ func _draw() -> void:
 	_draw_effect_fills(grid, cell_size)
 	_draw_digits(grid, cell_size, ink)
 	_draw_grid_lines(grid, cell_size, fx)
+	_draw_oracle(grid, cell_size, ink)
 	_draw_effect_rings(grid, cell_size, fx)
 	_draw_line_drifts()
 	_draw_conflict_motes(grid, cell_size, fx)
@@ -2455,6 +2475,38 @@ func _draw_streak_break_shards(pop: ScorePop, origin: Vector2, fade: float) -> v
 		draw_circle(origin + Vector2(cos(angle), sin(angle)) * dist, 2.2 - pop.age * 1.1, speck)
 
 
+func _draw_oracle(grid: Rect2, cell_size: float, ink: float) -> void:
+	if _oracle.is_empty():
+		return
+	var font: Font = entry_font if entry_font != null else _score_font()
+	if font == null:
+		return
+	var note_size: int = maxi(10, int(minf(cell_size / float(maxi(box_width, box_height)), ink * 0.42) * 0.55))
+	var cell := Vector2(cell_size, cell_size)
+	for flash in _oracle:
+		if flash.age < 0.0 or flash.digit < 1:
+			continue
+		var travel: float = clampf(flash.age / ORACLE_LIFE, 0.0, 1.0)
+		var settle: float = travel * travel * (3.0 - 2.0 * travel)
+		var origin: Vector2 = _get_cell_position(grid, cell_size, flash.index)
+		var center: Vector2 = origin + cell * 0.5
+		var wash := Color(0.62, 0.42, 1.0, (1.0 - travel) * 0.42)
+		draw_rect(Rect2(origin, cell), wash, true)
+		var ring := Color(0.86, 0.74, 1.0, (1.0 - clampf(travel / 0.75, 0.0, 1.0)) * 0.95)
+		var radius: float = lerpf(cell_size * 0.12, cell_size * 0.46, clampf(travel / 0.7, 0.0, 1.0))
+		draw_arc(center, radius, 0.0, TAU, 20, ring, maxf(1.6, ink * 0.04), true)
+		var slot := Vector2i((flash.digit - 1) % box_width, int((flash.digit - 1) / box_width))
+		var slot_center := origin + Vector2((float(slot.x) + 0.5) * cell_size / float(box_width), (float(slot.y) + 0.5) * cell_size / float(box_height))
+		var at: Vector2 = center.lerp(slot_center, settle)
+		var pop_size: int = int(round(lerpf(ink * 0.5, float(note_size), settle)))
+		var text: String = str(flash.digit)
+		var text_width: float = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, pop_size).x
+		var baseline: float = (font.get_ascent(pop_size) - font.get_descent(pop_size)) * 0.5
+		var fade: float = 1.0 - clampf((travel - 0.62) / 0.38, 0.0, 1.0)
+		var ink_color := Color(1.0, 0.93, 0.62, fade)
+		draw_string(font, at + Vector2(-text_width * 0.5, baseline), text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, pop_size, ink_color)
+
+
 func _draw_digits(grid: Rect2, cell_size: float, ink: float) -> void:
 	var fallback: Font = get_theme_default_font()
 	if fallback == null:
@@ -2639,6 +2691,12 @@ func _sweep_strength(age: float) -> float:
 	var linear: float = clampf((age - SWEEP_TRAVEL_TIME) / SWEEP_FADE_TIME, 0.0, 1.0)
 	var fade: float = linear * linear * (3.0 - 2.0 * linear)
 	return 1.0 - fade
+
+
+func grid_global_rect() -> Rect2:
+	var grid := _get_grid_rect()
+	var xform := get_global_transform()
+	return Rect2(xform * grid.position, grid.size * xform.get_scale())
 
 
 func _get_board_rect() -> Rect2:
@@ -3084,6 +3142,7 @@ func _advance_score_pops(step: float) -> void:
 
 func _clear_effects() -> void:
 	_locks.clear()
+	_oracle.clear()
 	_sweeps.clear()
 	_drifts.clear()
 	_score_pops.clear()
@@ -3209,22 +3268,21 @@ func _spawn_line_drift(cells: PackedInt32Array) -> void:
 	var vertical: bool = _column_of(first) == _column_of(last)
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	var density: float = 4.0
-	if _style == ArtStyle.DESERT:
-		density = 12.0
-	elif _style == ArtStyle.EMBER or _style == ArtStyle.FOREST:
-		density = 7.0
-	var per_cell: int = clampi(int(round(density * burst_strength)), 3, 18)
-	if _style == ArtStyle.DESERT:
-		per_cell = clampi(per_cell, 8, 18)
+	var budget: int = 14 if _style == ArtStyle.DESERT else 10
+	budget = clampi(int(round(float(budget) * burst_strength)), 6, 18)
 	if OS.has_feature("web"):
-		per_cell = clampi(int(round(float(per_cell) * 0.45)), 2, 8)
-	for cell in cells:
+		budget = mini(budget, 8)
+	# A second or third line in the same combo only adds a small puff.
+	if _drifts.size() >= 8:
+		budget = mini(budget, 5 if OS.has_feature("web") else 6)
+	budget = mini(budget, BURST_CAP - _drifts.size())
+	if budget <= 0:
+		return
+	var count: int = cells.size()
+	for mote_index in budget:
+		var cell: int = cells[mote_index % count]
 		var center: Vector2 = _get_cell_position(grid, cell_size, cell) + Vector2(cell_size, cell_size) * 0.5
-		for _mote in per_cell:
-			if _drifts.size() >= DRIFT_LIMIT:
-				return
-			_drifts.append(_make_burst(rng, center, cell_size, fx, horizontal, vertical))
+		_drifts.append(_make_burst(rng, center, cell_size, fx, horizontal, vertical))
 
 
 func _make_burst(rng: RandomNumberGenerator, center: Vector2, cell_size: float, fx: float, horizontal: bool, vertical: bool) -> Drift:
@@ -3496,6 +3554,13 @@ func _advance_effects(step: float) -> void:
 			_locks.remove_at(lock_index)
 		else:
 			lock_index += 1
+	var oracle_index: int = 0
+	while oracle_index < _oracle.size():
+		_oracle[oracle_index].age += step
+		if _oracle[oracle_index].age >= ORACLE_LIFE:
+			_oracle.remove_at(oracle_index)
+		else:
+			oracle_index += 1
 	var sweep_index: int = 0
 	while sweep_index < _sweeps.size():
 		_sweeps[sweep_index].age += step
