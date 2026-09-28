@@ -13,14 +13,17 @@
 [ext_resource type="PackedScene" uid="uid://hjxyi55di5wk" path="res://scenes/levels_menu.tscn" id="8_levels"]
 [ext_resource type="PackedScene" path="res://scenes/race_menu.tscn" id="8_race"]
 [ext_resource type="PackedScene" path="res://scenes/win_screen.tscn" id="9_win"]
+[ext_resource type="PackedScene" path="res://scenes/journey_end.tscn" id="9_end"]
 [ext_resource type="Resource" uid="uid://bso7tgska1qnv" path="res://worlds/desert.tres" id="10_desert"]
 [ext_resource type="PackedScene" path="res://scenes/settings_menu.tscn" id="10_settings"]
 [ext_resource type="Resource" uid="uid://dwqq67f7mxy17" path="res://worlds/water.tres" id="11_water"]
 [ext_resource type="Resource" uid="uid://mjegw4kgp1ic" path="res://worlds/neon.tres" id="12_neon"]
 [ext_resource type="Resource" uid="uid://bx0qig8nudwt7" path="res://worlds/forest.tres" id="13_forest"]
 [ext_resource type="Resource" uid="uid://m14h2db5vkmh" path="res://worlds/ember.tres" id="14_ember"]
+[ext_resource type="Resource" path="res://worlds/rain.tres" id="18_rain"]
 [ext_resource type="PackedScene" path="res://scenes/profile_menu.tscn" id="15_profile"]
 [ext_resource type="PackedScene" path="res://scenes/board_menu.tscn" id="16_board"]
+[ext_resource type="Script" path="res://scripts/race_pause.gd" id="17_pause"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_bg"]
 shader = ExtResource("6_bg")
@@ -39,7 +42,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("3_theme")
 script = ExtResource("1_main")
-worlds = Array[ExtResource("3_a8y0u")]([ExtResource("10_desert"), ExtResource("11_water"), ExtResource("12_neon"), ExtResource("13_forest"), ExtResource("14_ember")])
+worlds = Array[ExtResource("3_a8y0u")]([ExtResource("10_desert"), ExtResource("11_water"), ExtResource("12_neon"), ExtResource("13_forest"), ExtResource("14_ember"), ExtResource("18_rain")])
 
 [node name="NightTint" type="CanvasModulate" parent="." unique_id=494294306]
 
@@ -55,6 +58,10 @@ bus = &"UI"
 [node name="MenuPlayer" type="AudioStreamPlayer" parent="." unique_id=1400000001]
 
 [node name="WinPlayer" type="AudioStreamPlayer" parent="." unique_id=1400000002]
+
+[node name="RacePlayer" type="AudioStreamPlayer" parent="." unique_id=1400000003]
+
+[node name="ShopPlayer" type="AudioStreamPlayer" parent="." unique_id=1400000004]
 
 [node name="Background" type="ColorRect" parent="." unique_id=1645891910]
 material = SubResource("ShaderMaterial_bg")
@@ -154,6 +161,19 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
+[node name="RacePause" type="Control" parent="GameScreen"]
+visible = false
+z_index = 20
+z_as_relative = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("17_pause")
+
 [node name="Margin" type="MarginContainer" parent="GameScreen" unique_id=800397641]
 layout_mode = 1
 anchors_preset = 15
@@ -171,6 +191,8 @@ layout_mode = 2
 theme_override_constants/separation = 16
 
 [node name="TopBar" type="HBoxContainer" parent="GameScreen/Margin/VBox" unique_id=980392264]
+z_index = 40
+z_as_relative = false
 layout_mode = 2
 theme_override_constants/separation = 14
 
@@ -194,6 +216,13 @@ custom_minimum_size = Vector2(0, 80)
 layout_mode = 2
 theme_override_font_sizes/font_size = 26
 text = "New"
+
+[node name="PauseButton" type="Button" parent="GameScreen/Margin/VBox/TopBar"]
+visible = false
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "Pause"
 
 [node name="BoardWrap" type="AspectRatioContainer" parent="GameScreen/Margin/VBox" unique_id=648919241]
 layout_mode = 2
@@ -241,6 +270,17 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 28
 disabled = true
 text = "Hint · 3"
+
+[node name="JourneyEnd" parent="." instance=ExtResource("9_end")]
+visible = false
+layout_mode = 0
+anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 720.0
+offset_bottom = 1280.0
+grow_horizontal = 1
+grow_vertical = 1
 
 [node name="WinScreen" parent="." unique_id=855286127 instance=ExtResource("9_win")]
 visible = false

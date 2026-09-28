@@ -84,7 +84,7 @@ const MOOD_DIFFICULTY: Array[float] = [0.62, 0.4, 0.18]
 const MOOD_BREATHE: float = 0.16
 const MOOD_CYCLE: float = 26.0
 
-enum ArtStyle { DESERT, WATER, NIGHT, FOREST, EMBER }
+enum ArtStyle { DESERT, WATER, NIGHT, FOREST, EMBER, RAIN }
 
 const COLOR_CONFLICT_TEXT: Color = Color(0.93, 0.64, 0.7)
 const COLOR_CONFLICT_CELL: Color = Color(0.72, 0.34, 0.44, 0.1)
@@ -162,6 +162,7 @@ class Drift extends RefCounted:
 	var sand: bool = false
 	var leaf: bool = false
 	var flame: bool = false
+	var rain: bool = false
 	var wraps: bool = false
 	var base_size: float = 2.0
 	var hollow: float = 0.0
@@ -654,6 +655,8 @@ func _palette_for(style: ArtStyle, vivid: bool) -> Palette:
 			_fill_forest(palette, vivid)
 		ArtStyle.EMBER:
 			_fill_ember(palette, vivid)
+		ArtStyle.RAIN:
+			_fill_rain(palette, vivid)
 		_:
 			_fill_night(palette, vivid)
 	return palette
@@ -822,6 +825,39 @@ func _fill_ember(palette: Palette, vivid: bool) -> void:
 		palette.lock = Color(0.9, 0.55, 0.22)
 		palette.sky_top = Color(0.04, 0.008, 0.004)
 		palette.sky_bottom = Color(0.1, 0.02, 0.0)
+
+
+func _fill_rain(palette: Palette, vivid: bool) -> void:
+	if vivid:
+		palette.well_top = Color(0.07, 0.09, 0.14)
+		palette.well_bottom = Color(0.03, 0.045, 0.08)
+		palette.line_thin = Color(0.68, 0.76, 0.86, 0.5)
+		palette.line_thick = Color(0.8, 0.88, 0.96, 0.78)
+		palette.given = Color(0.9, 0.93, 0.96)
+		palette.player = Color(0.72, 0.84, 0.96)
+		palette.note = Color(0.62, 0.72, 0.84, 0.75)
+		palette.selected = Color(0.55, 0.68, 0.86, 0.26)
+		palette.same_digit = Color(0.5, 0.64, 0.82, 0.18)
+		palette.peer = Color(0.2, 0.26, 0.36, 0.16)
+		palette.neon = Color(0.62, 0.76, 0.92)
+		palette.lock = Color(0.85, 0.9, 0.96)
+		palette.sky_top = Color(0.13, 0.16, 0.24)
+		palette.sky_bottom = Color(0.06, 0.08, 0.13)
+	else:
+		palette.well_top = Color(0.035, 0.045, 0.07)
+		palette.well_bottom = Color(0.018, 0.024, 0.04)
+		palette.line_thin = Color(0.32, 0.38, 0.48, 0.45)
+		palette.line_thick = Color(0.42, 0.5, 0.6, 0.62)
+		palette.given = Color(0.68, 0.74, 0.82)
+		palette.player = Color(0.48, 0.58, 0.72)
+		palette.note = Color(0.4, 0.48, 0.58, 0.68)
+		palette.selected = Color(0.28, 0.36, 0.48, 0.2)
+		palette.same_digit = Color(0.26, 0.34, 0.46, 0.14)
+		palette.peer = Color(0.12, 0.15, 0.22, 0.12)
+		palette.neon = Color(0.36, 0.46, 0.6)
+		palette.lock = Color(0.7, 0.78, 0.88)
+		palette.sky_top = Color(0.05, 0.06, 0.1)
+		palette.sky_bottom = Color(0.025, 0.03, 0.05)
 
 
 ## Writes `digit` into the selected cell; 0 clears it, as does repeating a digit.
@@ -2237,6 +2273,8 @@ func _draw() -> void:
 		_draw_trees(board)
 	elif _style == ArtStyle.EMBER:
 		_draw_crags(board)
+	elif _style == ArtStyle.RAIN:
+		_draw_rain_clouds(board)
 	_draw_world_flow()
 
 	var grid := _get_grid_rect()
@@ -2261,6 +2299,8 @@ func _draw() -> void:
 
 
 func _draw_sparkles() -> void:
+	if _style == ArtStyle.RAIN:
+		return
 	var board := _get_board_rect()
 	var center: Vector2 = board.get_center()
 	var orbit: float = board.size.x * 0.545
@@ -3171,6 +3211,8 @@ func _rebuild_flow() -> void:
 			count = 28
 		ArtStyle.EMBER:
 			count = 24
+		ArtStyle.RAIN:
+			count = 34
 		_:
 			count = 36
 	count = int(float(count) * _style_strength())
@@ -3204,6 +3246,11 @@ func _rebuild_flow() -> void:
 				else:
 					drift.velocity = Vector2(rng.randf_range(-12.0, 12.0), rng.randf_range(-52.0, -24.0))
 					drift.base_size = rng.randf_range(1.2, 2.5)
+			ArtStyle.RAIN:
+				drift.rain = true
+				drift.velocity = Vector2(rng.randf_range(-22.0, -8.0), rng.randf_range(150.0, 240.0))
+				drift.base_size = rng.randf_range(14.0, 26.0)
+				drift.life = rng.randf_range(1.6, 2.8)
 			_:
 				drift.velocity = Vector2(rng.randf_range(18.0, 46.0), rng.randf_range(-6.0, 6.0))
 		_flow.append(drift)
@@ -3231,12 +3278,16 @@ func _step_drifts(motes: Array[Drift], step: float) -> void:
 			elif mote.leaf:
 				mote.velocity.y += 210.0 * step
 				mote.velocity.x = sin(mote.age * 4.6 + mote.seed) * 42.0
+			elif mote.rain:
+				mote.velocity.y += 40.0 * step
 			elif _style == ArtStyle.EMBER:
 				mote.velocity.y -= 190.0 * step
 			elif fall > 0.0:
 				mote.velocity.y += SAND_GRAVITY * fall * step
 		mote.position += mote.velocity * step
-		if not mote.sand and not mote.leaf and not mote.flame:
+		if mote.rain and mote.wraps:
+			mote.position.x += sin(_ambient_time * 0.45 + mote.seed) * 10.0 * step
+		elif not mote.sand and not mote.leaf and not mote.flame and not mote.rain:
 			mote.position.y += sin(_ambient_time * 3.4 + mote.seed) * 16.0 * step
 		if mote.wraps:
 			if mote.age >= mote.life:
@@ -3244,6 +3295,8 @@ func _step_drifts(motes: Array[Drift], step: float) -> void:
 			if mote.position.x > size.x + 8.0:
 				mote.position.x = -8.0
 				mote.position.y = fmod(absf(mote.position.y + mote.seed * 40.0), size.y)
+			if mote.rain and mote.position.x < -16.0:
+				mote.position.x = size.x + 8.0
 			if mote.position.y > size.y + 8.0:
 				mote.position.y = -8.0
 			if mote.position.y < -8.0:
@@ -3326,6 +3379,14 @@ func _make_burst(rng: RandomNumberGenerator, center: Vector2, cell_size: float, 
 			mote.velocity = Vector2(
 				rng.randf_range(-36.0, 36.0),
 				-fx * rng.randf_range(0.85, 1.65)
+			)
+		ArtStyle.RAIN:
+			mote.rain = true
+			mote.life = rng.randf_range(0.7, 1.15)
+			mote.base_size = fx * rng.randf_range(0.22, 0.38)
+			mote.velocity = Vector2(
+				rng.randf_range(-28.0, -8.0),
+				fx * rng.randf_range(0.7, 1.25)
 			)
 		_:
 			mote.life = rng.randf_range(0.55, 0.95)
@@ -3411,6 +3472,33 @@ func _draw_crags(board: Rect2) -> void:
 	draw_colored_polygon(right, Color(0.16, 0.04, 0.01, 0.34 * strength))
 
 
+func _draw_rain_clouds(board: Rect2) -> void:
+	var strength: float = _style_strength()
+	if strength <= 0.02:
+		return
+	var drift: float = sin(_ambient_time * 0.18) * 12.0
+	var centers: Array[Vector2] = [
+		Vector2(board.position.x + 24.0 + drift, board.position.y - 28.0),
+		Vector2(board.position.x + board.size.x * 0.46, board.position.y - 52.0),
+		Vector2(board.end.x - 8.0 + drift * 0.5, board.position.y - 22.0),
+	]
+	var radii: Array[float] = [58.0, 74.0, 46.0]
+	for index in centers.size():
+		draw_circle(centers[index], radii[index], Color(0.42, 0.5, 0.62, 0.09 * strength))
+		draw_circle(centers[index] + Vector2(-10.0, -8.0), radii[index] * 0.58, Color(0.62, 0.7, 0.82, 0.05 * strength))
+
+
+func _draw_rain_streak(mote: Drift, color: Color, core: Color) -> void:
+	var dir: Vector2 = mote.velocity
+	if dir.length_squared() < 4.0:
+		dir = Vector2(-0.12, 1.0)
+	dir = dir.normalized()
+	var length: float = maxf(10.0, mote.base_size)
+	var head: Vector2 = mote.position
+	draw_line(head - dir * length, head, color, 1.35, true)
+	draw_circle(head, 1.15, core)
+
+
 func _draw_drift_list(motes: Array[Drift], burst: bool) -> void:
 	var strength: float = burst_strength if burst else _style_strength()
 	if strength <= 0.02:
@@ -3444,6 +3532,9 @@ func _draw_drift_list(motes: Array[Drift], burst: bool) -> void:
 			color = Color(1.0, 0.28, 0.05).lerp(Color(1.0, 0.62, 0.1), mix_gold)
 			color.a = (0.55 if not burst else 0.92) * fade * strength
 			core = Color(1.0, 0.94, 0.52, color.a * 0.95)
+		elif mote.rain:
+			color = Color(0.78, 0.86, 0.96, (0.32 if not burst else 0.7) * fade * strength)
+			core = Color(0.94, 0.97, 1.0, color.a * 0.85)
 		elif _style == ArtStyle.WATER:
 			color = Color(0.45, 0.88, 1.0, (0.28 if not burst else 0.9) * fade * strength)
 			core = Color(0.9, 0.98, 1.0, color.a * 0.8)
@@ -3456,6 +3547,9 @@ func _draw_drift_list(motes: Array[Drift], burst: bool) -> void:
 		else:
 			color = Color(0.96, 0.55, 1.0, (0.22 if not burst else 0.95) * fade * strength)
 			core = Color(1.0, 0.86, 1.0, color.a * 0.9)
+		if mote.rain:
+			_draw_rain_streak(mote, color, core)
+			continue
 		if mote.leaf:
 			var spin: float = mote.seed + mote.age * 3.2
 			_draw_leaf(mote.position, radius, spin, color, core)

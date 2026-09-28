@@ -2,16 +2,18 @@ class_name WorldLook
 extends Resource
 ## Inspector knobs for one world on the Levels list.
 
-enum Style { DESERT, WATER, NIGHT, FOREST, EMBER }
+enum Style { DESERT, WATER, NIGHT, FOREST, EMBER, RAIN }
 
 @export var title: String = "World"
 @export var style: Style = Style.NIGHT
 @export var ink: Color = Color(0.96, 0.55, 1.0)
+## Journey walks the worlds that keep this on. Worlds-menu extras stay off.
+@export var in_journey: bool = true
 
 @export_group("Audio")
 ## Bed for this world. Plays from the start, then repeats only after it finishes.
 @export var ambience: AudioStream
-## Bus name from the Audio panel (Desert, Water, Neon, Forest, Ember).
+## Bus name from the Audio panel (Desert, Water, Neon, Forest, Ember, Rain).
 @export var ambience_bus: String = "Ambience"
 
 @export_group("Ambient Particles")
