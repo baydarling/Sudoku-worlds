@@ -1,9 +1,10 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://1t5bjou05jhu"]
 
-[ext_resource type="Theme" path="res://ui/app_theme.tres" id="1_theme"]
-[ext_resource type="FontFile" path="res://ui/fonts/Nunito-ExtraBold.ttf" id="2_extrabold"]
+[ext_resource type="Theme" uid="uid://nabmc6oes4gy" path="res://ui/app_theme.tres" id="1_theme"]
+[ext_resource type="FontFile" uid="uid://4wm15c5qatye" path="res://ui/fonts/Nunito-ExtraBold.ttf" id="2_extrabold"]
+[ext_resource type="Script" uid="uid://dvad7fmr3qjt0" path="res://scripts/rank_liquid.gd" id="3_liquid"]
 
-[node name="ProfileMenu" type="Control"]
+[node name="ProfileMenu" type="Control" unique_id=1083120931]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -12,7 +13,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("1_theme")
 
-[node name="Center" type="CenterContainer" parent="."]
+[node name="Center" type="CenterContainer" parent="." unique_id=1689848153]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -20,59 +21,121 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="Center"]
+[node name="VBox" type="VBoxContainer" parent="Center" unique_id=129348041]
 layout_mode = 2
 theme_override_constants/separation = 14
 
-[node name="Title" type="Label" parent="Center/VBox"]
+[node name="Title" type="Label" parent="Center/VBox" unique_id=474156153]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.93, 0.94, 0.98, 1)
 theme_override_fonts/font = ExtResource("2_extrabold")
 theme_override_font_sizes/font_size = 52
-text = "PROFILE"
+text = "RANKS"
 horizontal_alignment = 1
 
-[node name="Hint" type="Label" parent="Center/VBox"]
+[node name="Hint" type="Label" parent="Center/VBox" unique_id=717764013]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
 theme_override_font_sizes/font_size = 22
 text = "Your path so far"
 horizontal_alignment = 1
 
-[node name="RuleWrap" type="CenterContainer" parent="Center/VBox"]
-custom_minimum_size = Vector2(0, 12)
+[node name="RuleWrap" type="CenterContainer" parent="Center/VBox" unique_id=184531438]
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 
-[node name="Rule" type="ColorRect" parent="Center/VBox/RuleWrap"]
-custom_minimum_size = Vector2(40, 2)
+[node name="Liquid" type="Control" parent="Center/VBox/RuleWrap" unique_id=164724000]
+custom_minimum_size = Vector2(300, 28)
 layout_mode = 2
 mouse_filter = 2
-color = Color(0.93, 0.78, 0.42, 0.35)
+script = ExtResource("3_liquid")
 
-[node name="Stats" type="RichTextLabel" parent="Center/VBox"]
-custom_minimum_size = Vector2(440, 0)
+[node name="Ranks" type="VBoxContainer" parent="Center/VBox" unique_id=1797014385]
 layout_mode = 2
-bbcode_enabled = true
-fit_content = true
-scroll_active = false
-theme_override_colors/default_color = Color(0.82, 0.84, 0.92, 1)
-theme_override_font_sizes/normal_font_size = 22
-text = "Streak  ·  0 days"
-horizontal_alignment = 1
-autowrap_mode = 2
+theme_override_constants/separation = 6
 
-[node name="WorldsButton" type="Button" parent="Center/VBox"]
+[node name="Novice" type="Label" parent="Center/VBox/Ranks" unique_id=572391776]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.82, 0.84, 0.92, 1)
+theme_override_font_sizes/font_size = 22
+text = "Novice"
+horizontal_alignment = 1
+
+[node name="Solver" type="Label" parent="Center/VBox/Ranks" unique_id=826264185]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.93, 0.82, 0.44, 1)
+theme_override_font_sizes/font_size = 22
+text = "★  Solver  ·  45"
+horizontal_alignment = 1
+
+[node name="Analyst" type="Label" parent="Center/VBox/Ranks" unique_id=869425339]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
+theme_override_font_sizes/font_size = 22
+text = "Analyst  ·  90"
+horizontal_alignment = 1
+
+[node name="Scholar" type="Label" parent="Center/VBox/Ranks" unique_id=1608624398]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
+theme_override_font_sizes/font_size = 22
+text = "Scholar  ·  135"
+horizontal_alignment = 1
+
+[node name="Logician" type="Label" parent="Center/VBox/Ranks" unique_id=1788371736]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
+theme_override_font_sizes/font_size = 22
+text = "Logician  ·  180"
+horizontal_alignment = 1
+
+[node name="Expert" type="Label" parent="Center/VBox/Ranks" unique_id=659684127]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
+theme_override_font_sizes/font_size = 22
+text = "Expert  ·  225"
+horizontal_alignment = 1
+
+[node name="Virtuoso" type="Label" parent="Center/VBox/Ranks" unique_id=729292241]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
+theme_override_font_sizes/font_size = 22
+text = "Virtuoso  ·  270"
+horizontal_alignment = 1
+
+[node name="Champion" type="Label" parent="Center/VBox/Ranks" unique_id=12002303]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
+theme_override_font_sizes/font_size = 22
+text = "Champion  ·  315"
+horizontal_alignment = 1
+
+[node name="Grandmaster" type="Label" parent="Center/VBox/Ranks" unique_id=1520019792]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
+theme_override_font_sizes/font_size = 22
+text = "Grandmaster  ·  360"
+horizontal_alignment = 1
+
+[node name="Master" type="Label" parent="Center/VBox/Ranks" unique_id=951530736]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
+theme_override_font_sizes/font_size = 22
+text = "Sudoku Master  ·  450"
+horizontal_alignment = 1
+
+[node name="WorldsButton" type="Button" parent="Center/VBox" unique_id=903330704]
 custom_minimum_size = Vector2(440, 88)
 layout_mode = 2
 theme_type_variation = &"QuietButton"
 theme_override_font_sizes/font_size = 28
 text = "Worlds"
 
-[node name="Spacer2" type="Control" parent="Center/VBox"]
+[node name="Spacer2" type="Control" parent="Center/VBox" unique_id=1266898520]
 custom_minimum_size = Vector2(0, 8)
 layout_mode = 2
 
-[node name="BackButton" type="Button" parent="Center/VBox"]
+[node name="BackButton" type="Button" parent="Center/VBox" unique_id=695136096]
 custom_minimum_size = Vector2(440, 72)
 layout_mode = 2
 theme_type_variation = &"GhostButton"

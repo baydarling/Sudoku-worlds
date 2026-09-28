@@ -136,27 +136,88 @@ offset_left = 140.0
 offset_top = 500.0
 offset_right = 580.0
 offset_bottom = 930.0
-theme_override_constants/separation = 14
+theme_override_constants/separation = 22
 alignment = 1
 
-[node name="JourneyCluster" type="VBoxContainer" parent="Body"]
+[node name="ModeRow" type="HBoxContainer" parent="Body"]
 layout_mode = 2
-theme_override_constants/separation = 4
+theme_override_constants/separation = 16
+alignment = 1
 
-[node name="JourneyButton" type="Button" parent="Body/JourneyCluster" unique_id=1626402955]
-custom_minimum_size = Vector2(440, 128)
+[node name="JourneyButton" type="Button" parent="Body/ModeRow" unique_id=1626402955]
+custom_minimum_size = Vector2(216, 216)
 layout_mode = 2
+size_flags_horizontal = 4
 theme_type_variation = &"PlayButton"
-theme_override_font_sizes/font_size = 34
-text = "Journey Mode"
+text = ""
 
-[node name="JourneyLinks" type="HBoxContainer" parent="Body/JourneyCluster"]
+[node name="Col" type="VBoxContainer" parent="Body/ModeRow/JourneyButton"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="Title" type="Label" parent="Body/ModeRow/JourneyButton/Col"]
+layout_mode = 2
+mouse_filter = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.98, 0.86, 0.52, 1)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 30
+text = "Journey"
+horizontal_alignment = 1
+
+[node name="Level" type="Label" parent="Body/ModeRow/JourneyButton/Col"]
 visible = false
-custom_minimum_size = Vector2(440, 48)
+layout_mode = 2
+mouse_filter = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.93, 0.78, 0.42, 0.9)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 18
+text = "Level 1"
+horizontal_alignment = 1
+
+[node name="RaceButton" type="Button" parent="Body/ModeRow" unique_id=1728451103]
+custom_minimum_size = Vector2(216, 216)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_type_variation = &"HeatButton"
+text = ""
+
+[node name="Col" type="VBoxContainer" parent="Body/ModeRow/RaceButton"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="Title" type="Label" parent="Body/ModeRow/RaceButton/Col"]
+layout_mode = 2
+mouse_filter = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.96, 0.9, 1)
+theme_override_fonts/font = ExtResource("2_extrabold")
+theme_override_font_sizes/font_size = 30
+text = "Race"
+horizontal_alignment = 1
+
+[node name="JourneyLinks" type="HBoxContainer" parent="Body"]
+visible = false
+custom_minimum_size = Vector2(448, 44)
 layout_mode = 2
 theme_override_constants/separation = 0
 
-[node name="NewGame" type="Button" parent="Body/JourneyCluster/JourneyLinks"]
+[node name="NewGame" type="Button" parent="Body/JourneyLinks"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"FooterButton"
@@ -166,14 +227,14 @@ theme_override_colors/font_pressed_color = Color(0.82, 0.62, 0.32, 1)
 theme_override_font_sizes/font_size = 20
 text = "New Game"
 
-[node name="Rule" type="ColorRect" parent="Body/JourneyCluster/JourneyLinks"]
+[node name="Rule" type="ColorRect" parent="Body/JourneyLinks"]
 custom_minimum_size = Vector2(2, 22)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
 color = Color(0.93, 0.78, 0.42, 0.28)
 
-[node name="Worlds" type="Button" parent="Body/JourneyCluster/JourneyLinks"]
+[node name="Worlds" type="Button" parent="Body/JourneyLinks"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"FooterButton"
@@ -184,18 +245,15 @@ theme_override_font_sizes/font_size = 20
 text = "Worlds"
 
 [node name="QuickPlayButton" type="Button" parent="Body" unique_id=221894591]
-custom_minimum_size = Vector2(440, 88)
+custom_minimum_size = Vector2(448, 84)
 layout_mode = 2
+size_flags_horizontal = 3
 theme_type_variation = &"QuietButton"
+theme_override_colors/font_color = Color(0.94, 0.93, 0.98, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(0.78, 0.76, 0.86, 1)
 theme_override_font_sizes/font_size = 28
 text = "Quickplay"
-
-[node name="RaceButton" type="Button" parent="Body" unique_id=1728451103]
-custom_minimum_size = Vector2(440, 88)
-layout_mode = 2
-theme_type_variation = &"HeatButton"
-theme_override_font_sizes/font_size = 28
-text = "Race Mode"
 
 [node name="Footer" type="MarginContainer" parent="." unique_id=701293102]
 layout_mode = 0

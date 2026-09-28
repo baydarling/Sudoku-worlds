@@ -68,6 +68,8 @@ const CLICK_PITCH: float = 1.05
 ## Short one-shots on their own players so web polyphony cannot drop a tap.
 const ONESHOT_VOICES: int = 3
 const MENU_STREAM: AudioStream = preload("res://audio/menu.mp3")
+const RACE_STREAM: AudioStream = preload("res://audio/racemod.mp3")
+const SHOP_STREAM: AudioStream = preload("res://audio/shop.mp3")
 const WIN_STREAM: AudioStream = preload("res://audio/win.mp3")
 const TREASURE_STREAM: AudioStream = preload("res://audio/treasure.mp3")
 const OVERHEAT_STREAM: AudioStream = preload("res://audio/overheat.wav")
@@ -126,6 +128,18 @@ class Chrome extends RefCounted:
 
 ## Worlds on the Levels list. Open one in the inspector to change its particles.
 @export var worlds: Array[WorldLook] = []
+## Race song level. 0 matches the other music. The music slider still applies.
+@export_range(-24.0, 12.0, 0.5) var race_music_db: float = 0.0:
+	set(value):
+		race_music_db = value
+		if _race_music != null and is_instance_valid(_race_music) and _race_music_on:
+			_race_music.volume_db = value
+## Shop song level. 0 matches the other music. The music slider still applies.
+@export_range(-24.0, 12.0, 0.5) var shop_music_db: float = 0.0:
+	set(value):
+		shop_music_db = value
+		if _shop_music != null and is_instance_valid(_shop_music) and _shop_music_on:
+			_shop_music.volume_db = value
 
 @onready var _background: ColorRect = $Background
 @onready var _main_menu: Control = $MainMenu
@@ -148,13 +162,23 @@ class Chrome extends RefCounted:
 @onready var _difficulty_back_button: Button = $DifficultyMenu/Center/VBox/BackButton
 @onready var _race_menu: Control = $RaceMenu
 @onready var _quick_play_button: Button = $MainMenu/Body/QuickPlayButton
-@onready var _race_mode_button: Button = $MainMenu/Body/RaceButton
+@onready var _race_mode_button: Button = $MainMenu/Body/ModeRow/RaceButton
 @onready var _race_mini_button: Button = $RaceMenu/Center/VBox/MiniButton
 @onready var _race_wide_button: Button = $RaceMenu/Center/VBox/WideButton
 @onready var _race_back_button: Button = $RaceMenu/Center/VBox/BackButton
 @onready var _game_screen: Control = $GameScreen
 @onready var _game_margin: MarginContainer = $GameScreen/Margin
 @onready var _win_screen: Control = $WinScreen
+@onready var _journey_end: Control = $JourneyEnd
+@onready var _end_dim: ColorRect = $JourneyEnd/Dim
+@onready var _end_bloom: ColorRect = $JourneyEnd/Bloom
+@onready var _end_panel: PanelContainer = $JourneyEnd/Center/Panel
+@onready var _end_title: Label = $JourneyEnd/Center/Panel/Margin/VBox/Title
+@onready var _end_stars: WinStars = $JourneyEnd/Center/Panel/Margin/VBox/Stars
+@onready var _end_rank: RankMeter = $JourneyEnd/Center/Panel/Margin/VBox/Rank
+@onready var _end_gold: Label = $JourneyEnd/Center/Panel/Margin/VBox/Gold
+@onready var _end_detail: Label = $JourneyEnd/Center/Panel/Margin/VBox/Detail
+@onready var _end_rest: Button = $JourneyEnd/Center/Panel/Margin/VBox/RestButton
 @onready var _win_dim: ColorRect = $WinScreen/Dim
 @onready var _win_bloom: ColorRect = $WinScreen/Bloom
 @onready var _win_panel: PanelContainer = $WinScreen/Center/Panel
@@ -171,10 +195,10 @@ var _digit_remain_labels: Array[Label] = []
 var _pad_enabled: bool = false
 var _chrome: Chrome = Chrome.new()
 @onready var _status_label: Label = $GameScreen/Margin/VBox/TopBar/StatusLabel
-@onready var _journey_button: Button = $MainMenu/Body/JourneyCluster/JourneyButton
-@onready var _journey_links: HBoxContainer = $MainMenu/Body/JourneyCluster/JourneyLinks
-@onready var _home_new_button: Button = $MainMenu/Body/JourneyCluster/JourneyLinks/NewGame
-@onready var _home_worlds_button: Button = $MainMenu/Body/JourneyCluster/JourneyLinks/Worlds
+@onready var _journey_button: Button = $MainMenu/Body/ModeRow/JourneyButton
+@onready var _journey_links: HBoxContainer = $MainMenu/Body/JourneyLinks
+@onready var _home_new_button: Button = $MainMenu/Body/JourneyLinks/NewGame
+@onready var _home_worlds_button: Button = $MainMenu/Body/JourneyLinks/Worlds
 @onready var _logo_float: Control = $MainMenu/Header/LogoSlot/LogoFloat
 @onready var _home_quit_button: Button = $MainMenu/Header/Quit
 @onready var _streak_button: Button = $MainMenu/Header/Streak
@@ -185,7 +209,7 @@ var _chrome: Chrome = Chrome.new()
 @onready var _profile_button: Button = $MainMenu/Footer/FooterRow/ProfileButton
 @onready var _board_button: Button = $MainMenu/Footer/FooterRow/BoardButton
 @onready var _profile_menu: Control = $ProfileMenu
-@onready var _profile_stats: RichTextLabel = $ProfileMenu/Center/VBox/Stats
+@onready var _profile_ranks: VBoxContainer = $ProfileMenu/Center/VBox/Ranks
 @onready var _profile_worlds_button: Button = $ProfileMenu/Center/VBox/WorldsButton
 @onready var _profile_back_button: Button = $ProfileMenu/Center/VBox/BackButton
 @onready var _board_menu: Control = $BoardMenu
@@ -209,8 +233,12 @@ var _chrome: Chrome = Chrome.new()
 @onready var _clicks: AudioStreamPlayer = $ClicksPlayer
 @onready var _menu: AudioStreamPlayer = $MenuPlayer
 @onready var _win: AudioStreamPlayer = $WinPlayer
+@onready var _race_music: AudioStreamPlayer = $RacePlayer
+@onready var _shop_music: AudioStreamPlayer = $ShopPlayer
 @onready var _menu_button: Button = $GameScreen/Margin/VBox/TopBar/MenuButton
 @onready var _new_button: Button = $GameScreen/Margin/VBox/TopBar/NewButton
+@onready var _pause_button: Button = $GameScreen/Margin/VBox/TopBar/PauseButton
+@onready var _pause_overlay: RacePause = $GameScreen/RacePause
 @onready var _time_label: Label = $WinScreen/Center/Panel/Margin/VBox/TimeLabel
 @onready var _highscore_label: Label = $WinScreen/Center/Panel/Margin/VBox/HighscoreLabel
 @onready var _ask_label: Label = $WinScreen/Center/Panel/Margin/VBox/AskLabel
@@ -266,6 +294,13 @@ var _shop_skip: Button
 var _shop_waiting: bool = false
 var _relic_tray: HBoxContainer
 var _play_relic_glyphs: Array[RelicGlyph] = []
+var _relic_note: PanelContainer
+var _relic_note_name: Label
+var _relic_note_blurb: Label
+var _relic_note_tween: Tween
+var _relic_note_slot: int = -1
+var _relic_note_id: int = 0
+var _relic_tap_at: int = 0
 var _tool_bar: VBoxContainer
 var _tool_prompt: Label
 var _world_rule: PanelContainer
@@ -305,15 +340,23 @@ var _puzzles_cleared: int = 0
 var _playing_look: WorldLook
 var _ambience_should_loop: bool = false
 var _menu_should_loop: bool = false
+var _race_music_fade: Tween
+var _race_music_on: bool = false
+var _shop_music_fade: Tween
+var _shop_music_on: bool = false
 var _confirm_new_journey: bool = false
 var _confirm_new_puzzle: bool = false
 var _journey_confirm_id: int = 0
 var _puzzle_confirm_id: int = 0
 var _save_queued: bool = false
 var _timer_held: bool = false
+var _race_paused: bool = false
+var _race_counting: bool = false
+var _race_count_id: int = 0
 var _dealing: bool = false
 var _race_hinting: bool = false
 var _mini_clears: int = 0
+var _wide_clears: int = 0
 var _mini_race_score: int = 0
 var _race_seconds: float = 0.0
 var _mini_chaining: bool = false
@@ -362,13 +405,15 @@ func _ready() -> void:
 	_merge_race_high_scores()
 	_load_journey_progress()
 	_load_prefs()
+	_absorb_world_rule_history()
 	_journey_rank_seen = _rank_stars
 	_refresh_journey_buttons()
+	_style_home_modes()
 	_refresh_streak_label()
 	_main_menu.modulate.a = 0.0
 	_start_logo_float()
 	_arm_tap(_journey_button, _on_journey_button_pressed)
-	_arm_tap(_home_new_button, _on_new_journey_pressed)
+	_arm_tap(_home_new_button, _on_home_new_pressed)
 	_arm_tap(_home_worlds_button, _on_home_worlds_pressed)
 	_arm_tap(_quick_play_button, _on_quick_play_pressed)
 	_arm_tap(_race_mode_button, _on_race_mode_pressed)
@@ -408,8 +453,10 @@ func _ready() -> void:
 	_sync_audio_sliders()
 	_arm_tap(_menu_button, _on_menu_pressed)
 	_arm_tap(_new_button, _on_new_pressed)
+	_arm_tap(_pause_button, _on_pause_pressed)
 	_arm_tap(_yes_button, _on_win_continue)
 	_arm_tap(_no_button, _on_leave_game)
+	_arm_tap(_end_rest, _on_leave_game)
 	_arm_tap(_notes_button, _toggle_notes)
 	_arm_tap(_undo_button, _board.undo)
 	_arm_tap(_hint_button, _on_hint_pressed)
@@ -525,7 +572,7 @@ func _apply_safe_area() -> void:
 	_game_margin.add_theme_constant_override("margin_right", right)
 	_game_margin.add_theme_constant_override("margin_bottom", bottom)
 	var screens: Array[Control] = [
-		_main_menu, _journey_menu, _levels_menu, _difficulty_menu, _race_menu, _settings_menu, _profile_menu, _board_menu, _win_screen
+		_main_menu, _journey_menu, _levels_menu, _difficulty_menu, _race_menu, _settings_menu, _profile_menu, _board_menu, _win_screen, _journey_end
 	]
 	if is_instance_valid(_shop_screen):
 		screens.append(_shop_screen)
@@ -561,11 +608,11 @@ func _inset_home(left: int, top: int, right: int, bottom: int) -> void:
 	var header: Control = _main_menu.get_node_or_null("Header") as Control
 	var body: Control = _main_menu.get_node_or_null("Body") as Control
 	var footer: Control = _main_menu.get_node_or_null("Footer") as Control
-	var col_w: float = 440.0
+	var col_w: float = 448.0
 	var extra: float = 0.0
 	if is_instance_valid(_journey_links) and _journey_links.visible:
-		extra = 56.0
-	var body_h: float = 340.0 + extra
+		extra = 66.0
+	var body_h: float = 322.0 + extra
 	var foot_h: float = 128.0
 	if header != null:
 		header.set("layout_mode", 0)
@@ -891,6 +938,7 @@ func start_new_game(resume: bool = false) -> void:
 		return
 	_dealing = true
 	_hide_world_rule()
+	_hide_relic_note()
 	_reset_new_confirm()
 	if not (_mode == Mode.MINI and _mini_chaining):
 		_kill_race_chain_motion()
@@ -918,9 +966,16 @@ func start_new_game(resume: bool = false) -> void:
 	_apply_style_chrome()
 	_stop_menu_music()
 	_stop_win_sound()
-	_play_world_ambience()
+	if _mode == Mode.MINI:
+		_play_race_music()
+	else:
+		_stop_race_music()
+		_play_world_ambience()
 	_last_session = _session_name()
 	_timer_running = false
+	if not _mini_chaining:
+		_clear_race_pause()
+	_sync_race_corner()
 	_main_menu.visible = false
 	_levels_menu.visible = false
 	_difficulty_menu.visible = false
@@ -966,6 +1021,7 @@ func start_new_game(resume: bool = false) -> void:
 	if _mode == Mode.MINI and not _mini_chaining:
 		_sync_race_clock()
 		_mini_clears = 0
+		_wide_clears = 0
 		_mini_race_score = 0
 		_race_ending = false
 	var blanks: int = _blanks_for_current()
@@ -1097,7 +1153,7 @@ func _on_undo_availability_changed(can_undo: bool) -> void:
 
 
 func _toggle_notes() -> void:
-	if _dealing or _win_screen.visible or _notes_button.disabled:
+	if _dealing or _results_open() or _notes_button.disabled:
 		return
 	_board.notes_mode = not _board.notes_mode
 
@@ -1131,19 +1187,19 @@ func _pick_quick_play() -> void:
 		return
 	var previous_world: int = _world_index
 	var previous_difficulty: int = int(_difficulty)
+	var choices: Array[int] = _featured_world_indices()
+	if choices.is_empty():
+		_difficulty = Difficulty.EASY
+		return
 	for _attempt in 8:
-		var index: int = randi() % worlds.size()
-		if worlds[index] == null:
-			continue
+		var index: int = choices[randi() % choices.size()]
 		var difficulty: Difficulty = (randi() % 3) as Difficulty
-		if index == previous_world and int(difficulty) == previous_difficulty:
+		if index == previous_world and int(difficulty) == previous_difficulty and choices.size() > 1:
 			continue
 		_world_index = index
 		_difficulty = difficulty
 		return
-	_world_index = clampi(_world_index, 0, worlds.size() - 1)
-	if worlds[_world_index] == null:
-		_world_index = 0
+	_world_index = choices[0]
 	_difficulty = (randi() % 3) as Difficulty
 
 
@@ -1152,24 +1208,23 @@ func _pick_race_world() -> void:
 		_world_index = 0
 		return
 	var previous_world: int = _world_index
+	var choices: Array[int] = _featured_world_indices()
+	if choices.is_empty():
+		return
 	for _attempt in 8:
-		var index: int = randi() % worlds.size()
-		if worlds[index] == null:
-			continue
-		if index == previous_world and worlds.size() > 1:
+		var index: int = choices[randi() % choices.size()]
+		if index == previous_world and choices.size() > 1:
 			continue
 		_world_index = index
 		return
-	_world_index = clampi(_world_index, 0, worlds.size() - 1)
-	if worlds[_world_index] == null:
-		_world_index = 0
+	_world_index = choices[0]
 
 
 func _mini_race_difficulty() -> Difficulty:
 	if _race_grid == SudokuGenerator.WIDE_SIZE:
-		if _mini_clears < 2:
+		if _wide_clears < 2:
 			return Difficulty.EASY
-		if _mini_clears < 4:
+		if _wide_clears < 4:
 			return Difficulty.MEDIUM
 		return Difficulty.HARD
 	if _mini_clears < 2:
@@ -1220,16 +1275,25 @@ func _on_race_play_pressed() -> void:
 func _on_journey_button_pressed() -> void:
 	if _transitioning:
 		return
+	if _journey_complete or _journey_progress < 1:
+		return
 	_clear_journey_confirm()
 	_transitioning = true
 	await _zoom_away(_main_menu, _journey_button)
-	if not _journey_complete and _journey_progress >= 1:
-		await _maybe_present_shop()
-		_arm_game()
-		await _start_journey(_journey_progress, true)
-		await _settle_game()
-	else:
-		await _enter_journey()
+	await _maybe_present_shop()
+	_arm_game()
+	await _start_journey(_journey_progress, true)
+	await _settle_game()
+	_transitioning = false
+
+
+func _on_home_new_pressed() -> void:
+	if _transitioning:
+		return
+	_clear_journey_confirm()
+	_transitioning = true
+	await _zoom_away(_main_menu, _home_new_button)
+	await _enter_journey()
 	_transitioning = false
 
 
@@ -1248,6 +1312,8 @@ func _ensure_home_journey_links() -> void:
 	if is_instance_valid(_journey_links) and is_instance_valid(_home_new_button) and is_instance_valid(_home_worlds_button):
 		return
 	if not is_instance_valid(_main_menu) or not is_instance_valid(_journey_button):
+		return
+	if _main_menu.get_node_or_null("Body/ModeRow") != null:
 		return
 	var body: VBoxContainer = _main_menu.get_node_or_null("Body") as VBoxContainer
 	if body == null:
@@ -1484,6 +1550,8 @@ func _on_new_journey_pressed() -> void:
 func _on_journey_back_pressed() -> void:
 	if _transitioning:
 		return
+	_clear_journey_confirm()
+	_refresh_home_cta()
 	_transitioning = true
 	await _zoom_away(_journey_menu, _journey_back_button)
 	await _enter_menu()
@@ -1567,7 +1635,7 @@ func _on_win_continue() -> void:
 	if _journey_failed and _mode == Mode.JOURNEY:
 		_transitioning = true
 		_stop_win_motion()
-		await _fade_away([_win_screen, _game_screen])
+		await _fade_away([_win_screen, _journey_end, _game_screen])
 		_dismiss_win()
 		_journey_failed = false
 		_arm_game()
@@ -1580,7 +1648,7 @@ func _on_win_continue() -> void:
 		return
 	_transitioning = true
 	_stop_win_motion()
-	await _fade_away([_win_screen, _game_screen])
+	await _fade_away([_win_screen, _journey_end, _game_screen])
 	_dismiss_win()
 	if _mode == Mode.JOURNEY:
 		_journey_level += 1
@@ -1598,12 +1666,12 @@ func _on_win_continue() -> void:
 	_transitioning = false
 
 
-## In-game Menu returns to the hub for that mode.
+## In-game Menu returns home from a journey, and to that mode's hub otherwise.
 func _on_menu_pressed() -> void:
 	if _dealing:
 		return
 	if _mode == Mode.JOURNEY:
-		await _exit_play(_enter_journey)
+		await _exit_play(_enter_menu)
 	elif _mode == Mode.QUICK:
 		await _exit_play(_enter_menu)
 	elif _mode == Mode.MINI:
@@ -1612,7 +1680,7 @@ func _on_menu_pressed() -> void:
 		await _exit_play(_enter_menu)
 
 
-## Journey rest returns to the path. A picked world's Levels button returns to difficulty.
+## Journey Menu and rest return home. A picked world's Levels button returns to difficulty.
 func _on_leave_game() -> void:
 	if _dealing:
 		return
@@ -1623,7 +1691,7 @@ func _on_leave_game() -> void:
 	elif _mode == Mode.MINI:
 		await _exit_play(_enter_race)
 	else:
-		await _exit_play(_enter_journey)
+		await _exit_play(_enter_menu)
 
 
 func _exit_play(next: Callable) -> void:
@@ -1634,6 +1702,7 @@ func _exit_play(next: Callable) -> void:
 	_flush_save_run()
 	_timer_running = false
 	_timer_held = false
+	_clear_race_pause()
 	_mini_chaining = false
 	_race_ending = false
 	_board.loud_pops = false
@@ -1642,10 +1711,13 @@ func _exit_play(next: Callable) -> void:
 	_reset_mistake_fx()
 	_kill_race_chain_motion()
 	_hide_world_rule()
+	_hide_relic_note()
 	_stop_ambience()
+	_stop_race_music()
+	_stop_shop_music()
 	_stop_win_sound()
 	_stop_win_motion()
-	await _fade_away([_win_screen, _game_screen])
+	await _fade_away([_win_screen, _journey_end, _game_screen])
 	_dismiss_win()
 	_set_board_active(false)
 	_journey_failed = false
@@ -1669,6 +1741,7 @@ func _enter_menu() -> void:
 	_hide_reset(_profile_menu)
 	_hide_reset(_board_menu)
 	_hide_reset(_win_screen)
+	_hide_reset(_journey_end)
 	_hide_shop_screen()
 	_start_logo_float()
 	await _reveal(_main_menu, _menu_items())
@@ -1688,6 +1761,7 @@ func _enter_journey() -> void:
 	_hide_reset(_profile_menu)
 	_hide_reset(_board_menu)
 	_hide_reset(_win_screen)
+	_hide_reset(_journey_end)
 	_hide_shop_screen()
 	_refresh_journey_buttons()
 	_play_journey_rank()
@@ -1707,6 +1781,7 @@ func _enter_levels() -> void:
 	_hide_reset(_profile_menu)
 	_hide_reset(_board_menu)
 	_hide_reset(_win_screen)
+	_hide_reset(_journey_end)
 	await _reveal(_levels_menu, _level_items())
 
 
@@ -1723,6 +1798,7 @@ func _enter_difficulty() -> void:
 	_hide_reset(_profile_menu)
 	_hide_reset(_board_menu)
 	_hide_reset(_win_screen)
+	_hide_reset(_journey_end)
 	var look: WorldLook = _world_at(_world_index)
 	_difficulty_title.text = look.title.to_upper()
 	_difficulty_title.add_theme_color_override("font_color", look.ink)
@@ -1745,6 +1821,7 @@ func _enter_race() -> void:
 	_hide_reset(_profile_menu)
 	_hide_reset(_board_menu)
 	_hide_reset(_win_screen)
+	_hide_reset(_journey_end)
 	await _reveal(_race_menu, _race_items())
 
 
@@ -1761,6 +1838,7 @@ func _enter_settings() -> void:
 	_hide_reset(_profile_menu)
 	_hide_reset(_board_menu)
 	_hide_reset(_win_screen)
+	_hide_reset(_journey_end)
 	_sync_night_buttons()
 	_sync_buzz_button()
 	_sync_check_button()
@@ -1782,6 +1860,7 @@ func _enter_profile() -> void:
 	_hide_reset(_settings_menu)
 	_hide_reset(_board_menu)
 	_hide_reset(_win_screen)
+	_hide_reset(_journey_end)
 	_refresh_profile()
 	await _reveal(_profile_menu, _profile_items())
 
@@ -1799,6 +1878,7 @@ func _enter_board() -> void:
 	_hide_reset(_settings_menu)
 	_hide_reset(_profile_menu)
 	_hide_reset(_win_screen)
+	_hide_reset(_journey_end)
 	_refresh_leaderboard()
 	await _reveal(_board_menu, _board_items())
 
@@ -2074,15 +2154,15 @@ func _menu_items() -> Array[Control]:
 	if is_instance_valid(_home_quit_button):
 		items.append(_home_quit_button)
 	items.append(_streak_button)
-	var cluster: Control = _main_menu.get_node_or_null("Body/JourneyCluster") as Control
-	if cluster != null:
-		items.append(cluster)
+	var row: Control = _main_menu.get_node_or_null("Body/ModeRow") as Control
+	if row != null:
+		items.append(row)
 	else:
 		items.append(_journey_button)
-	if is_instance_valid(_journey_links) and _journey_links.visible and cluster == null:
+		items.append(_race_mode_button)
+	if is_instance_valid(_journey_links) and _journey_links.visible:
 		items.append(_journey_links)
 	items.append(_quick_play_button)
-	items.append(_race_mode_button)
 	items.append(_settings_button)
 	items.append(_profile_button)
 	items.append(_board_button)
@@ -2125,13 +2205,7 @@ func _race_items() -> Array[Control]:
 func _journey_items() -> Array[Control]:
 	var items: Array[Control] = []
 	items.append(_journey_menu.get_node("Center/VBox/Title") as Control)
-	items.append(_journey_menu.get_node("Center/VBox/Hint") as Control)
-	items.append(_journey_menu.get_node("Center/VBox/RuleWrap") as Control)
-	if is_instance_valid(_journey_map):
-		items.append(_journey_map)
-	items.append(_continue_button)
 	items.append(_new_journey_button)
-	items.append(_levels_button)
 	items.append(_journey_menu.get_node("Center/VBox/PaceLabel") as Control)
 	items.append(_pace_row)
 	var pace_hint: Control = _journey_menu.get_node_or_null("Center/VBox/PaceHint") as Control
@@ -2146,7 +2220,6 @@ func _settings_items() -> Array[Control]:
 	items.append(_settings_menu.get_node("Center/VBox/Title") as Control)
 	items.append(_settings_menu.get_node("Center/VBox/Hint") as Control)
 	items.append(_settings_menu.get_node("Center/VBox/RuleWrap") as Control)
-	items.append(_settings_menu.get_node("Center/VBox/FeelLabel") as Control)
 	items.append(_night_button)
 	items.append(_buzz_button)
 	items.append(_check_button)
@@ -2163,7 +2236,7 @@ func _profile_items() -> Array[Control]:
 	items.append(_profile_menu.get_node("Center/VBox/Title") as Control)
 	items.append(_profile_menu.get_node("Center/VBox/Hint") as Control)
 	items.append(_profile_menu.get_node("Center/VBox/RuleWrap") as Control)
-	items.append(_profile_stats)
+	items.append(_profile_ranks)
 	items.append(_profile_worlds_button)
 	items.append(_profile_back_button)
 	return items
@@ -2220,8 +2293,29 @@ func _refresh_journey_buttons() -> void:
 		_new_journey_button.text = "New Game"
 		_new_journey_button.add_theme_color_override("font_color", Color(0.86, 0.9, 1.0))
 	_rebuild_journey_map()
+	_shape_new_game_screen()
 	_refresh_home_cta()
 	_sync_pace_button()
+
+
+func _shape_new_game_screen() -> void:
+	_continue_button.visible = false
+	_levels_button.visible = false
+	if is_instance_valid(_journey_map):
+		_journey_map.visible = false
+	if is_instance_valid(_rank_meter):
+		_rank_meter.visible = false
+	var hint := _journey_menu.get_node_or_null("Center/VBox/Hint") as CanvasItem
+	if hint != null:
+		hint.visible = false
+	var rule := _journey_menu.get_node_or_null("Center/VBox/RuleWrap") as CanvasItem
+	if rule != null:
+		rule.visible = false
+	var title := _journey_menu.get_node_or_null("Center/VBox/Title") as Label
+	if title != null:
+		title.text = "NEW GAME"
+	_new_journey_button.visible = true
+	_pace_row.visible = true
 
 
 func _ensure_journey_map() -> void:
@@ -2240,7 +2334,7 @@ func _ensure_journey_map() -> void:
 		var insert_at: int = rule.get_index() + 1 if rule != null else 2
 		vbox.add_child(_journey_map)
 		vbox.move_child(_journey_map, mini(insert_at, vbox.get_child_count() - 1))
-	var needed: int = maxi(1, worlds.size())
+	var needed: int = maxi(1, _journey_worlds().size())
 	while _journey_map.get_child_count() < needed:
 		var row := Label.new()
 		row.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -2254,12 +2348,13 @@ func _rebuild_journey_map() -> void:
 	if not is_instance_valid(_journey_map):
 		return
 	_ensure_star_slots()
-	var count: int = mini(worlds.size(), _journey_map.get_child_count())
+	var listed: Array[WorldLook] = _journey_worlds()
+	var count: int = mini(listed.size(), _journey_map.get_child_count())
 	for world_i in count:
 		var row := _journey_map.get_child(world_i) as Label
 		if row == null:
 			continue
-		var look: WorldLook = _world_at(world_i)
+		var look: WorldLook = listed[world_i]
 		var cells: PackedStringArray = PackedStringArray()
 		for stage in JOURNEY_STAGES:
 			var level: int = world_i * JOURNEY_STAGES + stage + 1
@@ -2437,22 +2532,6 @@ func _rank_menu_hint() -> String:
 	return "%d / %d stars toward %s" % [_rank_fill(stars), _rank_span(index), RANK_NAMES[index + 1]]
 
 
-func _rank_catalog() -> String:
-	var current: int = _rank_index(_rank_stars)
-	var lines: PackedStringArray = PackedStringArray()
-	for index in RANK_NAMES.size():
-		var need: int = _rank_mark(index)
-		var label: String = RANK_NAMES[index] if need == 0 else "%s  ·  %d" % [RANK_NAMES[index], need]
-		var color: String = "9e94bc"
-		if index == current:
-			color = "eed070"
-			label = "★  %s" % label
-		elif index < current:
-			color = "d2d6eb"
-		lines.append("[color=#%s]%s[/color]" % [color, label])
-	return "\n".join(lines)
-
-
 func _play_journey_rank() -> void:
 	if not is_instance_valid(_rank_meter):
 		return
@@ -2488,39 +2567,47 @@ func _star_marks() -> String:
 func _star_sentence() -> String:
 	var missed: PackedStringArray = PackedStringArray()
 	if not _last_star_hint:
-		missed.append("a seal" if _last_star_seal else "a hint")
+		missed.append("seal" if _last_star_seal else "hint")
 	if not _last_star_clean:
-		missed.append("a mistake")
+		missed.append("mistake")
 	if not _last_star_clock:
-		missed.append("the clock")
+		missed.append("clock")
 	if missed.is_empty():
-		return "No hints, no mistakes, and inside the clock, so these stars paid %d gold." % _last_gold_stars
-	if missed.size() == 3:
-		var aid: String = "A seal" if _last_star_seal else "A hint"
-		return "%s, a mistake, and the clock left no star gold." % aid
+		return "Clean and on time. +%d gold." % _last_gold_stars
+	if _last_gold_stars <= 0:
+		return "No star gold."
+	return "%s. +%d gold." % [_star_reason(missed), _last_gold_stars]
+
+
+func _star_reason(missed: PackedStringArray) -> String:
 	if missed.size() == 1:
-		return "%s, so these stars paid %d gold." % [_star_miss_line(missed[0]), _last_gold_stars]
-	return "%s and %s cost two stars, so the last paid %d gold." % [_star_pair(missed[0]), missed[1], _last_gold_stars]
+		match missed[0]:
+			"hint":
+				return "Hint used"
+			"seal":
+				return "Seal used"
+			"mistake":
+				return "A mistake"
+			_:
+				return "Over time"
+	var words: PackedStringArray = PackedStringArray()
+	for index in missed.size():
+		words.append(_star_bit(missed[index], index == 0))
+	if words.size() == 2:
+		return "%s and %s" % [words[0], words[1]]
+	return "%s, %s, and %s" % [words[0], words[1], words[2]]
 
 
-func _star_pair(reason: String) -> String:
-	if reason == "a hint":
-		return "A hint"
-	if reason == "a seal":
-		return "A seal"
-	if reason == "a mistake":
-		return "A mistake"
-	return "The clock"
-
-
-func _star_miss_line(reason: String) -> String:
-	if reason == "a hint":
-		return "A hint was used"
-	if reason == "a seal":
-		return "A seal was used"
-	if reason == "a mistake":
-		return "A mistake landed"
-	return "The clock ran long"
+func _star_bit(bit: String, first: bool) -> String:
+	match bit:
+		"hint":
+			return "Hint" if first else "a hint"
+		"seal":
+			return "Seal" if first else "a seal"
+		"mistake":
+			return "A mistake" if first else "a mistake"
+		_:
+			return "Over time" if first else "over time"
 
 
 func _star_time_limit() -> float:
@@ -2794,11 +2881,13 @@ func _present_shop() -> void:
 	_fill_shop_buttons()
 	_shop_waiting = true
 	_pin_full_rect(_shop_screen)
+	_play_shop_music()
 	await _reveal(_shop_screen, _shop_items())
 	while _shop_waiting and is_instance_valid(self):
 		await get_tree().process_frame
 	if is_instance_valid(_shop_screen) and _shop_screen.visible:
 		await _fade_away([_shop_screen])
+	_stop_shop_music()
 
 
 func _on_shop_slot_pressed(slot: int) -> void:
@@ -2957,9 +3046,12 @@ func _ensure_relic_tray() -> void:
 		glyph.set_look(slot, false)
 		glyph.visible = false
 		tray.add_child(glyph)
+		glyph.gui_input.connect(_on_play_relic_gui.bind(slot))
 		_play_relic_glyphs.append(glyph)
 	vbox.add_child(tray)
 	vbox.move_child(tray, top_bar.get_index() + 1)
+	for glyph in _play_relic_glyphs:
+		glyph.mouse_filter = Control.MOUSE_FILTER_STOP
 	_relic_tray = tray
 
 
@@ -2975,7 +3067,166 @@ func _refresh_relic_tray() -> void:
 				_play_relic_glyphs[slot].set_look(slot, false)
 				show_any = true
 	_relic_tray.visible = show_any
+	if _relic_note_slot >= 0 and (_relic_note_slot >= _play_relic_glyphs.size() or not _play_relic_glyphs[_relic_note_slot].visible):
+		_hide_relic_note()
 	call_deferred("_place_tool_dock")
+
+
+func _input(event: InputEvent) -> void:
+	if _relic_note_slot < 0 or not is_instance_valid(_relic_note) or not _relic_note.visible:
+		return
+	if not _is_primary_press(event):
+		return
+	if Time.get_ticks_msec() - _relic_tap_at < TAP_GUARD_MS:
+		return
+	if _press_hits_play_relic(event):
+		return
+	_hide_relic_note()
+
+
+func _on_play_relic_gui(event: InputEvent, slot: int) -> void:
+	if not _is_primary_press(event):
+		return
+	if _mode != Mode.JOURNEY or slot < 0 or slot >= RelicManager.COUNT:
+		return
+	if not _relics.has_relic(slot as RelicManager.Relic):
+		return
+	var now: int = Time.get_ticks_msec()
+	if now - _relic_tap_at < TAP_GUARD_MS:
+		get_viewport().set_input_as_handled()
+		return
+	_relic_tap_at = now
+	get_viewport().set_input_as_handled()
+	if _relic_note_slot == slot and is_instance_valid(_relic_note) and _relic_note.visible:
+		_hide_relic_note()
+		return
+	_show_relic_note(slot)
+
+
+func _ensure_relic_note() -> void:
+	if is_instance_valid(_relic_note):
+		return
+	var card := PanelContainer.new()
+	card.name = "RelicNote"
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.z_index = 9
+	card.visible = false
+	var plate := StyleBoxFlat.new()
+	plate.bg_color = Color(0.07, 0.03, 0.1, 0.94)
+	plate.border_color = Color(0.93, 0.78, 0.42, 1.0)
+	plate.set_border_width_all(2)
+	plate.set_corner_radius_all(16)
+	plate.content_margin_left = 16.0
+	plate.content_margin_right = 16.0
+	plate.content_margin_top = 10.0
+	plate.content_margin_bottom = 10.0
+	card.add_theme_stylebox_override("panel", plate)
+	var copy := VBoxContainer.new()
+	copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	copy.add_theme_constant_override("separation", 2)
+	var name_label := Label.new()
+	name_label.name = "Name"
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", 22)
+	name_label.add_theme_color_override("font_color", Color(0.96, 0.9, 0.72, 1.0))
+	var blurb := Label.new()
+	blurb.name = "Blurb"
+	blurb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	blurb.add_theme_font_size_override("font_size", 16)
+	blurb.add_theme_color_override("font_color", Color(0.78, 0.7, 0.88, 0.95))
+	copy.add_child(name_label)
+	copy.add_child(blurb)
+	card.add_child(copy)
+	var screen := $GameScreen as Control
+	screen.add_child(card)
+	if not screen.resized.is_connected(_place_relic_note):
+		screen.resized.connect(_place_relic_note)
+	_relic_note = card
+	_relic_note_name = name_label
+	_relic_note_blurb = blurb
+
+
+func _show_relic_note(slot: int) -> void:
+	_ensure_relic_note()
+	var rarity: int = RelicManager.RARITIES[slot]
+	var tag: String = ShopManager.RARITY_TAG[clampi(rarity, 0, ShopManager.RARITY_TAG.size() - 1)]
+	_relic_note_slot = slot
+	_relic_note_name.text = RelicManager.NAMES[slot]
+	_relic_note_blurb.text = "%s  ·  %s" % [tag, RelicManager.BLURBS[slot]]
+	_relic_note.visible = true
+	_relic_note.modulate.a = 0.0
+	_place_relic_note()
+	call_deferred("_place_relic_note")
+	if _relic_note_tween != null and _relic_note_tween.is_valid():
+		_relic_note_tween.kill()
+	_relic_note_id += 1
+	var note_id: int = _relic_note_id
+	_relic_note_tween = create_tween()
+	_relic_note_tween.tween_property(_relic_note, "modulate:a", 1.0, 0.16)
+	_relic_note_tween.tween_interval(4.6)
+	_relic_note_tween.tween_property(_relic_note, "modulate:a", 0.0, 0.35)
+	_relic_note_tween.tween_callback(_finish_relic_note.bind(note_id))
+
+
+func _place_relic_note() -> void:
+	if not is_instance_valid(_relic_note) or not _relic_note.visible or not is_instance_valid(_relic_tray):
+		return
+	var width: float = minf(520.0, _game_screen.size.x - 32.0)
+	_relic_note_blurb.custom_minimum_size = Vector2(width - 36.0, 0.0)
+	var height: float = maxf(_relic_note.get_combined_minimum_size().y, 52.0)
+	_relic_note.size = Vector2(width, height)
+	var tray := _relic_tray.get_global_rect()
+	var x: float = _game_screen.get_global_rect().position.x + (_game_screen.size.x - width) * 0.5
+	_relic_note.global_position = Vector2(x, tray.end.y + 6.0)
+
+
+func _finish_relic_note(note_id: int) -> void:
+	if note_id != _relic_note_id:
+		return
+	_relic_note_tween = null
+	_relic_note_slot = -1
+	if is_instance_valid(_relic_note):
+		_relic_note.visible = false
+
+
+func _hide_relic_note() -> void:
+	_relic_note_id += 1
+	_relic_note_slot = -1
+	if _relic_note_tween != null and _relic_note_tween.is_valid():
+		_relic_note_tween.kill()
+	_relic_note_tween = null
+	if is_instance_valid(_relic_note):
+		_relic_note.visible = false
+		_relic_note.modulate.a = 1.0
+
+
+func _press_hits_play_relic(event: InputEvent) -> bool:
+	var viewport_point := Vector2(-100000.0, -100000.0)
+	if event is InputEventMouse:
+		viewport_point = (event as InputEventMouse).global_position
+	elif event is InputEventScreenTouch:
+		viewport_point = (event as InputEventScreenTouch).position
+	else:
+		return false
+	for glyph in _play_relic_glyphs:
+		if not is_instance_valid(glyph) or not glyph.visible or glyph.size.x < 4.0:
+			continue
+		var local: Vector2 = glyph.get_global_transform_with_canvas().affine_inverse() * viewport_point
+		if Rect2(Vector2.ZERO, glyph.size).grow(6.0).has_point(local):
+			return true
+	return false
+
+
+func _is_primary_press(event: InputEvent) -> bool:
+	if event is InputEventMouseButton:
+		var press := event as InputEventMouseButton
+		return press.pressed and press.button_index == MOUSE_BUTTON_LEFT
+	if event is InputEventScreenTouch:
+		return (event as InputEventScreenTouch).pressed
+	return false
 
 
 func _ensure_tool_bar() -> void:
@@ -3070,15 +3321,10 @@ func _offer_world_rule() -> void:
 		return
 	var style: SudokuBoard.ArtStyle = _board.current_style()
 	var line: String = _world_rule_line(style)
-	var shift: int = int(style)
-	if style == SudokuBoard.ArtStyle.FOREST and _mode == Mode.JOURNEY:
-		shift = 5
-	var bit: int = 1 << shift
-	if line.is_empty() or (_world_rules_seen & bit) != 0:
+	if line.is_empty() or _world_rule_known(style):
 		_hide_world_rule()
 		return
-	_world_rules_seen |= bit
-	_save_prefs()
+	_remember_world_rule(style)
 	_show_world_rule(line)
 
 
@@ -3208,7 +3454,7 @@ func _refresh_tool_bar() -> void:
 
 
 func _on_tool_pressed(kind: int) -> void:
-	if _mode != Mode.JOURNEY or _dealing or _journey_failed or _win_screen.visible:
+	if _mode != Mode.JOURNEY or _dealing or _journey_failed or _results_open():
 		return
 	if _relics.tool_count(kind) <= 0:
 		return
@@ -3402,6 +3648,89 @@ func _finish_menu_fade() -> void:
 		return
 	_menu.stop()
 	_menu.volume_db = 0.0
+
+
+func _setup_race_audio() -> void:
+	var stream: AudioStream = RACE_STREAM.duplicate()
+	if stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = true
+	_race_music.stream = stream
+	_race_music.bus = "Race"
+	_race_music.volume_db = race_music_db
+
+
+func _play_race_music() -> void:
+	if _race_music_on and _race_music.playing:
+		return
+	_stop_ambience()
+	if _race_music.stream == null:
+		_setup_race_audio()
+	_race_music_on = true
+	_kill_tween(_race_music_fade)
+	_race_music.volume_db = AUDIO_SILENCE_DB
+	_race_music.play(0.0)
+	_race_music_fade = _fade_player(_race_music, race_music_db, AMBIENCE_FADE_IN)
+
+
+func _stop_race_music() -> void:
+	_race_music_on = false
+	_kill_tween(_race_music_fade)
+	if not is_instance_valid(_race_music) or not _race_music.playing:
+		if is_instance_valid(_race_music):
+			_race_music.stop()
+			_race_music.volume_db = race_music_db
+		return
+	_race_music_fade = _fade_player(_race_music, AUDIO_SILENCE_DB, AMBIENCE_FADE_OUT)
+	_race_music_fade.tween_callback(_finish_race_music_fade)
+
+
+func _finish_race_music_fade() -> void:
+	if _race_music_on:
+		return
+	_race_music.stop()
+	_race_music.volume_db = race_music_db
+
+
+func _setup_shop_audio() -> void:
+	var stream: AudioStream = SHOP_STREAM.duplicate()
+	if stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = true
+	_shop_music.stream = stream
+	_shop_music.bus = "Shop"
+	_shop_music.volume_db = shop_music_db
+
+
+func _play_shop_music() -> void:
+	if _shop_music_on and _shop_music.playing:
+		return
+	_stop_ambience()
+	_stop_menu_music()
+	if _shop_music.stream == null:
+		_setup_shop_audio()
+	_shop_music_on = true
+	_kill_tween(_shop_music_fade)
+	_shop_music.volume_db = AUDIO_SILENCE_DB
+	_shop_music.play(0.0)
+	_shop_music_fade = _fade_player(_shop_music, shop_music_db, AMBIENCE_FADE_IN)
+
+
+func _stop_shop_music() -> void:
+	_shop_music_on = false
+	_kill_tween(_shop_music_fade)
+	if not is_instance_valid(_shop_music) or not _shop_music.playing:
+		if is_instance_valid(_shop_music):
+			_shop_music.stop()
+			_shop_music.volume_db = shop_music_db
+		return
+	_shop_music_fade = _fade_player(_shop_music, AUDIO_SILENCE_DB, AMBIENCE_FADE_OUT)
+	_shop_music_fade.tween_callback(_finish_shop_music_fade)
+
+
+func _finish_shop_music_fade() -> void:
+	if _shop_music_on:
+		return
+	_shop_music.stop()
+	_shop_music.volume_db = shop_music_db
 
 
 func _fade_player(player: AudioStreamPlayer, to_db: float, duration: float) -> Tween:
@@ -3641,27 +3970,109 @@ func _journey_stage_index(level: int) -> int:
 	return posmod(maxi(1, level) - 1, JOURNEY_STAGES)
 
 
+func _journey_worlds() -> Array[WorldLook]:
+	var listed: Array[WorldLook] = []
+	for look in worlds:
+		if look != null and look.in_journey:
+			listed.append(look)
+	return listed
+
+
+func _featured_world_indices() -> Array[int]:
+	var indices: Array[int] = []
+	for index in worlds.size():
+		var look: WorldLook = worlds[index]
+		if look != null and look.in_journey:
+			indices.append(index)
+	if indices.is_empty():
+		for index in worlds.size():
+			if worlds[index] != null:
+				indices.append(index)
+	return indices
+
+
 func _journey_world_index(level: int) -> int:
-	if worlds.is_empty():
+	var listed: Array[WorldLook] = _journey_worlds()
+	if listed.is_empty():
 		return 0
 	@warning_ignore("integer_division")
-	return posmod((maxi(1, level) - 1) / JOURNEY_STAGES, worlds.size())
+	return posmod((maxi(1, level) - 1) / JOURNEY_STAGES, listed.size())
 
 
 func _journey_look(level: int) -> WorldLook:
-	return _world_at(_journey_world_index(level))
+	var listed: Array[WorldLook] = _journey_worlds()
+	if listed.is_empty():
+		return _world_at(0)
+	return listed[_journey_world_index(level)]
 
 
 func _journey_length() -> int:
-	return maxi(1, worlds.size()) * JOURNEY_STAGES
+	return maxi(1, _journey_worlds().size()) * JOURNEY_STAGES
 
 
 func _is_journey_finale() -> bool:
 	return _mode == Mode.JOURNEY and _journey_level >= _journey_length()
 
 
+func _uses_pause() -> bool:
+	return _mode == Mode.MINI or _mode == Mode.JOURNEY
+
+
+func _sync_race_corner() -> void:
+	var pausing: bool = _uses_pause()
+	_new_button.visible = not pausing
+	_pause_button.visible = pausing
+	if not pausing:
+		return
+	_pause_button.text = "Resume" if _race_paused else "Pause"
+	_paint_chrome_button(_pause_button, false, _race_paused, false)
+
+
+func _clear_race_pause() -> void:
+	_race_count_id += 1
+	_race_counting = false
+	_race_paused = false
+	if is_instance_valid(_pause_overlay):
+		_pause_overlay.hide_veil()
+	if is_instance_valid(_pause_button):
+		_pause_button.disabled = false
+
+
+func _on_pause_pressed() -> void:
+	if not _uses_pause() or _transitioning or _dealing or _mini_chaining or _race_ending or _journey_failed or _results_open() or _race_counting:
+		return
+	if not _race_paused:
+		_race_paused = true
+		_timer_running = false
+		_set_input_enabled(false)
+		_pause_overlay.show_mark(_board.glow_color)
+		_sync_race_corner()
+		return
+	_begin_race_resume()
+
+
+func _begin_race_resume() -> void:
+	_race_counting = true
+	_race_count_id += 1
+	var count_id: int = _race_count_id
+	_pause_button.disabled = true
+	for step in 3:
+		_pause_overlay.show_count(_board.glow_color, str(3 - step))
+		await get_tree().create_timer(0.85).timeout
+		if count_id != _race_count_id or not is_instance_valid(self) or not _game_screen.visible or not _uses_pause():
+			return
+	_race_counting = false
+	_race_paused = false
+	_pause_overlay.hide_veil()
+	_timer_running = true
+	_set_input_enabled(true)
+	_refresh_hint_button()
+	_pause_button.disabled = false
+	_sync_race_corner()
+
+
 func _on_new_pressed() -> void:
-	if _transitioning or _dealing or _win_screen.visible:
+	if _transitioning or _dealing or _results_open():
 		return
 	if not _confirm_new_puzzle:
 		_arm_new_confirm()
@@ -3792,7 +4203,7 @@ func _refresh_hint_button() -> void:
 
 
 func _on_hint_pressed() -> void:
-	if _transitioning or _dealing or _win_screen.visible or _journey_failed:
+	if _transitioning or _dealing or _results_open() or _journey_failed:
 		return
 	_reset_new_confirm()
 	if _hints_left <= 0:
@@ -3915,6 +4326,7 @@ func _apply_style_chrome() -> void:
 		_paint_chrome_button(button, button == _erase_button, false, true)
 	_paint_chrome_button(_menu_button, false, false, false)
 	_paint_chrome_button(_new_button, false, _confirm_new_puzzle, false)
+	_sync_race_corner()
 	_paint_chrome_button(_undo_button, false, false, false)
 	_paint_chrome_button(_hint_button, _hints_left <= 0, false, false)
 	_paint_chrome_button(_notes_button, false, _board.notes_mode, false)
@@ -3985,6 +4397,17 @@ func _chrome_for(style: SudokuBoard.ArtStyle) -> Chrome:
 			chrome.disabled_ink = Color(0.52, 0.26, 0.14)
 			chrome.radius = 8
 			chrome.glow = Color(1.0, 0.32, 0.06, 0.4)
+		SudokuBoard.ArtStyle.RAIN:
+			chrome.fill = Color(0.06, 0.08, 0.12)
+			chrome.hover = Color(0.1, 0.13, 0.18)
+			chrome.pressed = Color(0.035, 0.05, 0.08)
+			chrome.disabled = Color(0.04, 0.05, 0.08)
+			chrome.border = Color(0.62, 0.74, 0.88)
+			chrome.ink = Color(0.88, 0.92, 0.96)
+			chrome.muted = Color(0.55, 0.64, 0.76)
+			chrome.disabled_ink = Color(0.36, 0.42, 0.52)
+			chrome.radius = 18
+			chrome.glow = Color(0.5, 0.66, 0.86, 0.22)
 		_:
 			chrome.fill = Color(0.11, 0.05, 0.16)
 			chrome.hover = Color(0.18, 0.08, 0.26)
@@ -4110,6 +4533,8 @@ func _on_mini_cleared(round_id: int) -> void:
 	_set_input_enabled(false)
 	_board.lift_mood()
 	_mini_clears += 1
+	if _race.grid_size == SudokuGenerator.WIDE_SIZE:
+		_wide_clears += 1
 	_mini_race_score = _board.score
 	_touch_daily_streak(false)
 	_race.on_grid_completed()
@@ -4177,7 +4602,7 @@ func _on_mini_times_up() -> void:
 func _on_journey_failed() -> void:
 	if _mode != Mode.JOURNEY or _journey_failed or _dealing:
 		return
-	if _win_screen.visible:
+	if _results_open():
 		return
 	_journey_failed = true
 	_timer_running = false
@@ -4201,8 +4626,16 @@ func _on_journey_failed() -> void:
 	await _present_win(_round)
 
 
+func _results_open() -> bool:
+	return _win_screen.visible or _journey_end.visible
+
+
 func _present_win(round_id: int) -> void:
+	if _is_journey_finale() and not _journey_failed:
+		await _present_journey_end(round_id)
+		return
 	_hide_world_rule()
+	_hide_relic_note()
 	_win_screen.visible = true
 	_win_screen.mouse_filter = Control.MOUSE_FILTER_STOP
 	_win_dim.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -4218,9 +4651,6 @@ func _present_win(round_id: int) -> void:
 		return
 	_apply_win_copy()
 	_present_win_stars()
-	if _is_journey_finale():
-		_stop_ambience()
-		_ensure_menu_music()
 	if not _journey_failed:
 		_play_win_sound()
 	_win_panel.pivot_offset = _win_panel.size * 0.5
@@ -4238,6 +4668,66 @@ func _present_win(round_id: int) -> void:
 		_no_button.release_focus()
 
 
+func _present_journey_end(round_id: int) -> void:
+	_hide_world_rule()
+	_hide_relic_note()
+	_win_screen.visible = false
+	_journey_end.visible = true
+	_journey_end.mouse_filter = Control.MOUSE_FILTER_STOP
+	_end_dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_end_dim.color.a = 0.0
+	_end_panel.modulate.a = 0.0
+	_end_panel.scale = Vector2.ONE
+	var flash: Color = _board.glow_color.lerp(Color.WHITE, 0.2)
+	_end_title.modulate = Color(flash.r * 1.25, flash.g * 1.15, flash.b * 1.2)
+	_set_end_spread(0.0)
+	_end_gold.text = _highscore_label.text
+	_end_gold.add_theme_color_override("font_color", COLOR_HIGHSCORE)
+	_end_detail.text = _time_label.text
+	await get_tree().process_frame
+	if round_id != _round or not _game_screen.visible:
+		_dismiss_win()
+		return
+	var glow: Color = _board.glow_color.lerp(Color(1.0, 0.86, 0.46), 0.58)
+	_end_stars.set_result(_last_puzzle_stars, glow)
+	_end_stars.play()
+	if is_instance_valid(_end_rank):
+		_end_rank.visible = false
+	_stop_ambience()
+	_ensure_menu_music()
+	_play_win_sound()
+	_end_panel.pivot_offset = _end_panel.size * 0.5
+	_win_tween = create_tween()
+	_win_tween.set_parallel(true)
+	_win_tween.tween_property(_end_dim, "color:a", 0.76, 0.45)
+	_win_tween.tween_method(_set_end_spread, 0.0, 1.0, 0.75)
+	_win_tween.tween_property(_end_panel, "modulate:a", 1.0, 0.4).set_delay(0.14)
+	_win_tween.tween_property(_end_title, "modulate", Color.WHITE, 0.55).set_delay(0.12)
+	_end_gold.modulate.a = 0.0
+	_win_tween.tween_property(_end_gold, "modulate:a", 1.0, 0.4).set_delay(0.22)
+	await _win_tween.finished
+	if round_id == _round and _game_screen.visible:
+		_end_rest.release_focus()
+
+
+func _set_end_spread(spread: float) -> void:
+	var material := _end_bloom.material as ShaderMaterial
+	if material != null:
+		material.set_shader_parameter("spread", spread)
+		material.set_shader_parameter("neon", _board.glow_color)
+
+
+func _show_end_rank() -> void:
+	if not is_instance_valid(_end_rank):
+		return
+	_end_rank.visible = true
+	var stars: int = _rank_stars
+	if _level_stars_before < stars:
+		_end_rank.show_total(stars, RANK_NAMES, _rank_marks(), _level_stars_before, 0.48)
+	else:
+		_end_rank.show_total(stars, RANK_NAMES, _rank_marks())
+
+
 func _set_win_spread(spread: float) -> void:
 	var material := _win_bloom.material as ShaderMaterial
 	if material != null:
@@ -4250,6 +4740,16 @@ func _dismiss_win() -> void:
 		_win_tween.kill()
 	_stop_win_sound()
 	_win_screen.visible = false
+	_journey_end.visible = false
+	_end_panel.scale = Vector2.ONE
+	_end_panel.modulate = Color.WHITE
+	_end_title.modulate = Color.WHITE
+	_end_gold.modulate = Color.WHITE
+	if is_instance_valid(_end_stars):
+		_end_stars.stop()
+	if is_instance_valid(_end_rank):
+		_end_rank.visible = false
+	_set_end_spread(1.0)
 	_win_panel.scale = Vector2.ONE
 	_win_panel.modulate = Color.WHITE
 	_win_label.modulate = Color.WHITE
@@ -4305,7 +4805,8 @@ func _present_win_stars() -> void:
 	var glow: Color = _board.glow_color.lerp(Color(1.0, 0.86, 0.46), 0.58)
 	_win_stars.set_result(_last_puzzle_stars, glow)
 	_win_stars.play()
-	_present_win_rank()
+	if is_instance_valid(_win_rank):
+		_win_rank.visible = false
 
 
 func _ensure_win_rank() -> RankMeter:
@@ -4414,6 +4915,7 @@ func _reset_new_confirm() -> void:
 
 func _set_play_chrome_locked(locked: bool) -> void:
 	_new_button.disabled = locked
+	_pause_button.disabled = locked
 	_menu_button.disabled = locked
 	_hint_button.disabled = locked or _hints_left <= 0
 
@@ -4431,7 +4933,7 @@ func _hold_play_timer() -> void:
 
 
 func _release_play_timer() -> void:
-	if _timer_held and _game_screen.visible and not _win_screen.visible and not _dealing and not _race_ending and not _journey_failed:
+	if _timer_held and not _race_paused and _game_screen.visible and not _results_open() and not _dealing and not _race_ending and not _journey_failed:
 		_timer_running = true
 	_timer_held = false
 
@@ -4676,6 +5178,66 @@ func _save_journey_progress() -> void:
 	config.save(SETTINGS_PATH)
 
 
+func _read_world_rule_bits(config: ConfigFile) -> int:
+	var seen: int = 0
+	for key in ["world_rules", "world_rule_card", "world_rule_band", "world_rule_copy"]:
+		seen |= maxi(0, int(config.get_value("prefs", key, 0)))
+	if (seen & (1 << 5)) != 0:
+		seen |= 1 << int(SudokuBoard.ArtStyle.FOREST)
+	return seen & 31
+
+
+func _world_rule_bit(style: SudokuBoard.ArtStyle) -> int:
+	return 1 << int(style)
+
+
+func _world_rule_known(style: SudokuBoard.ArtStyle) -> bool:
+	return (_world_rules_seen & _world_rule_bit(style)) != 0
+
+
+func _remember_world_rule(style: SudokuBoard.ArtStyle) -> void:
+	var bit: int = _world_rule_bit(style)
+	if (_world_rules_seen & bit) != 0:
+		return
+	_world_rules_seen |= bit
+	_save_prefs()
+
+
+func _world_opened_before(world_index: int) -> bool:
+	if world_index < 0 or world_index >= worlds.size():
+		return false
+	var first_level: int = world_index * JOURNEY_STAGES + 1
+	if _journey_progress > first_level:
+		return true
+	for stage in JOURNEY_STAGES:
+		if _stars_at(first_level + stage) >= 0:
+			return true
+	var look: WorldLook = worlds[world_index]
+	if look == null:
+		return false
+	var slug: String = look.title.strip_edges().to_lower().replace(" ", "_")
+	for difficulty_name in DIFFICULTY_NAMES:
+		if int(_high_scores.get("%s_%s" % [slug, difficulty_name.to_lower()], 0)) > 0:
+			return true
+	return false
+
+
+func _absorb_world_rule_history() -> void:
+	var seen: int = _world_rules_seen
+	if _rank_stars >= _star_cap():
+		seen |= 31
+	for world_index in worlds.size():
+		var look: WorldLook = worlds[world_index]
+		if look == null or not look.in_journey:
+			continue
+		if _world_opened_before(world_index):
+			seen |= 1 << world_index
+	if seen == _world_rules_seen:
+		return
+	_world_rules_seen = seen
+	_save_prefs()
+
+
 func _load_prefs() -> void:
 	var config := ConfigFile.new()
 	if config.load(SETTINGS_PATH) == OK:
@@ -4688,7 +5250,7 @@ func _load_prefs() -> void:
 		_streak_days = maxi(0, int(config.get_value("prefs", "streak_days", 0)))
 		_streak_date = String(config.get_value("prefs", "streak_date", ""))
 		_puzzles_cleared = maxi(0, int(config.get_value("prefs", "puzzles_cleared", 0)))
-		_world_rules_seen = maxi(0, int(config.get_value("prefs", "world_rule_copy", 0)))
+		_world_rules_seen = _read_world_rule_bits(config)
 	_apply_haptics()
 	_apply_audio_mix()
 	_apply_check()
@@ -4706,7 +5268,7 @@ func _save_prefs() -> void:
 	config.set_value("prefs", "streak_days", _streak_days)
 	config.set_value("prefs", "streak_date", _streak_date)
 	config.set_value("prefs", "puzzles_cleared", _puzzles_cleared)
-	config.set_value("prefs", "world_rule_copy", _world_rules_seen)
+	config.set_value("prefs", "world_rules", _world_rules_seen)
 	config.save(SETTINGS_PATH)
 
 
@@ -4719,14 +5281,6 @@ func _apply_win_copy() -> void:
 		_yes_button.visible = true
 		_yes_button.text = "Retry"
 		_no_button.text = "Menu"
-		return
-	if _is_journey_finale():
-		_win_label.text = "The journey\nis finished."
-		_win_label.add_theme_font_size_override("font_size", 52)
-		_ask_label.text = "Take a rest."
-		_ask_label.add_theme_color_override("font_color", Color(0.86, 0.72, 1.0))
-		_yes_button.visible = false
-		_no_button.text = "Rest"
 		return
 	_win_label.text = "YOU WON!"
 	_win_label.remove_theme_font_size_override("font_size")
@@ -4771,7 +5325,7 @@ func _cleared_line() -> String:
 	var clock: String = _format_time(_elapsed_seconds)
 	if _mode == Mode.JOURNEY:
 		var look: WorldLook = _journey_look(_journey_level)
-		return "%s · %s · %s\n%s\n%s" % [look.title, DIFFICULTY_NAMES[_difficulty], clock, _star_sentence(), _rank_line()]
+		return "%s · %s · %s\n%s" % [look.title, DIFFICULTY_NAMES[_difficulty], clock, _star_sentence()]
 	if _mode == Mode.MINI:
 		return "%s Mini %s in %s · %d pts" % [_world_at(_world_index).title, DIFFICULTY_NAMES[_difficulty], clock, _board.score]
 	return "%s %s cleared in %s · %d pts" % [_world_at(_world_index).title, DIFFICULTY_NAMES[_difficulty], clock, _board.score]
@@ -4864,17 +5418,95 @@ func _merge_race_high_scores() -> void:
 		_high_scores["mini_race"] = race6
 
 
+func _style_home_modes() -> void:
+	_paint_mode_box(
+		_journey_button,
+		Color(0.24, 0.16, 0.06, 1.0),
+		Color(0.34, 0.24, 0.08, 1.0),
+		Color(0.16, 0.1, 0.04, 1.0),
+		Color(0.98, 0.84, 0.46, 1.0),
+		Color(0.95, 0.68, 0.2, 0.58)
+	)
+	_paint_mode_box(
+		_race_mode_button,
+		Color(0.5, 0.18, 0.08, 1.0),
+		Color(0.62, 0.24, 0.1, 1.0),
+		Color(0.32, 0.12, 0.05, 1.0),
+		Color(1.0, 0.68, 0.4, 1.0),
+		Color(1.0, 0.38, 0.14, 0.58)
+	)
+	_style_home_quick()
+
+
+func _paint_mode_box(button: Button, fill: Color, hover_fill: Color, pressed_fill: Color, border: Color, glow: Color) -> void:
+	if not is_instance_valid(button):
+		return
+	button.add_theme_stylebox_override("normal", _mode_box(fill, border, glow, 26))
+	button.add_theme_stylebox_override("hover", _mode_box(hover_fill, border.lightened(0.12), Color(glow.r, glow.g, glow.b, 0.72), 30))
+	button.add_theme_stylebox_override("pressed", _mode_box(pressed_fill, border.darkened(0.15), Color(glow.r, glow.g, glow.b, 0.28), 8))
+	button.add_theme_stylebox_override("focus", _mode_box(fill, border, glow, 26))
+
+
+func _mode_box(fill: Color, border: Color, glow: Color, glow_size: int) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.content_margin_left = 16.0
+	box.content_margin_right = 16.0
+	box.content_margin_top = 16.0
+	box.content_margin_bottom = 16.0
+	box.bg_color = fill
+	box.set_border_width_all(2)
+	box.border_color = border
+	box.set_corner_radius_all(36)
+	box.shadow_color = glow
+	box.shadow_size = glow_size
+	box.shadow_offset = Vector2(0, 4)
+	return box
+
+
+func _style_home_quick() -> void:
+	if not is_instance_valid(_quick_play_button):
+		return
+	_quick_play_button.add_theme_stylebox_override("normal", _home_quick_box(false, false))
+	_quick_play_button.add_theme_stylebox_override("hover", _home_quick_box(true, false))
+	_quick_play_button.add_theme_stylebox_override("pressed", _home_quick_box(false, true))
+	_quick_play_button.add_theme_stylebox_override("focus", _home_quick_box(true, false))
+
+
+func _home_quick_box(hover: bool, pressed: bool) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.content_margin_left = 26.0
+	box.content_margin_right = 26.0
+	box.content_margin_top = 14.0
+	box.content_margin_bottom = 14.0
+	if pressed:
+		box.bg_color = Color(0.1, 0.09, 0.14, 1.0)
+	elif hover:
+		box.bg_color = Color(0.22, 0.2, 0.3, 1.0)
+	else:
+		box.bg_color = Color(0.16, 0.14, 0.22, 1.0)
+	box.set_border_width_all(2)
+	box.border_color = Color(0.72, 0.66, 0.9, 0.72 if hover else 0.42)
+	box.set_corner_radius_all(18)
+	if not pressed:
+		box.shadow_color = Color(0.35, 0.24, 0.7, 0.28 if hover else 0.18)
+		box.shadow_size = 14
+		box.shadow_offset = Vector2(0, 3)
+	return box
+
+
 func _refresh_home_cta() -> void:
 	_refresh_rank_button()
 	if not is_instance_valid(_journey_button):
 		return
 	var can_continue: bool = not _journey_complete and _journey_progress >= 1
-	if can_continue:
-		_journey_button.text = "Continue · Level %d" % _journey_progress
-	else:
-		_journey_button.text = "Journey Mode"
+	_journey_button.text = ""
+	var level := _journey_button.get_node_or_null("Col/Level") as Label
+	if level != null:
+		level.visible = can_continue
+		if can_continue:
+			level.text = "Level %d" % _journey_progress
 	if is_instance_valid(_journey_links):
-		_journey_links.visible = can_continue
+		_journey_links.visible = true
 	if is_instance_valid(_home_new_button):
 		if _confirm_new_journey:
 			_home_new_button.text = "Start over?"
@@ -4940,20 +5572,39 @@ func _touch_daily_streak(flush: bool = true) -> void:
 
 
 func _refresh_profile() -> void:
-	var title: Label = _profile_menu.get_node_or_null("Center/VBox/Title") as Label
-	if title != null:
-		title.text = "RANKS"
 	var hint: Label = _profile_menu.get_node_or_null("Center/VBox/Hint") as Label
 	if hint != null:
 		hint.text = _rank_menu_hint()
-	var streak: int = _visible_streak()
-	var streak_line: String = "1 day streak" if streak == 1 else "%d day streak" % streak
-	var puzzles: String = "1 puzzle cleared" if _puzzles_cleared == 1 else "%d puzzles cleared" % _puzzles_cleared
-	_profile_stats.bbcode_enabled = true
-	_profile_stats.add_theme_font_size_override("normal_font_size", 22)
-	_profile_stats.text = "%s\n[color=#6b6280]%s\n%s\n%s[/color]" % [
-		_rank_catalog(), streak_line, puzzles, _relics.catalog_line()
-	]
+	var liquid := _profile_menu.get_node_or_null("Center/VBox/RuleWrap/Liquid") as RankLiquid
+	var index: int = _rank_index(_rank_stars)
+	if liquid != null:
+		if index >= RANK_NAMES.size() - 1:
+			liquid.set_progress(1, 1)
+		else:
+			liquid.set_progress(_rank_fill(_rank_stars), _rank_span(index))
+	_paint_rank_rows(index)
+
+
+func _paint_rank_rows(current: int) -> void:
+	if not is_instance_valid(_profile_ranks):
+		return
+	var passed := Color(0.824, 0.839, 0.922)
+	var gold := Color(0.933, 0.816, 0.439)
+	var locked := Color(0.62, 0.58, 0.737)
+	for index in _profile_ranks.get_child_count():
+		var label := _profile_ranks.get_child(index) as Label
+		if label == null:
+			continue
+		var base: String = str(label.get_meta("rank_base", ""))
+		if base.is_empty():
+			base = label.text.trim_prefix("★  ").trim_prefix("★ ")
+			label.set_meta("rank_base", base)
+		if index == current:
+			label.text = "★  %s" % base
+			label.add_theme_color_override("font_color", gold)
+		else:
+			label.text = base
+			label.add_theme_color_override("font_color", passed if index < current else locked)
 
 
 func _refresh_leaderboard() -> void:
@@ -4983,3 +5634,27 @@ func _refresh_leaderboard() -> void:
 			line.add_theme_color_override("font_color", Color(0.93, 0.86, 0.62, 1.0))
 			line.text = "%s  ·  %d" % [row[0], score]
 		_board_list.add_child(line)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 12)
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_board_list.add_child(gap)
+	_add_board_stat(_streak_stat_line())
+	_add_board_stat(_puzzle_stat_line())
+
+
+func _streak_stat_line() -> String:
+	var streak: int = _visible_streak()
+	return "1 day streak" if streak == 1 else "%d day streak" % streak
+
+
+func _puzzle_stat_line() -> String:
+	return "1 puzzle cleared" if _puzzles_cleared == 1 else "%d puzzles cleared" % _puzzles_cleared
+
+
+func _add_board_stat(caption: String) -> void:
+	var line := Label.new()
+	line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	line.add_theme_font_size_override("font_size", 20)
+	line.add_theme_color_override("font_color", Color(0.7, 0.66, 0.78, 1.0))
+	line.text = caption
+	_board_list.add_child(line)

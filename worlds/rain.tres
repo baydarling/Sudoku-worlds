@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="WorldLook" format=3]
+
+[ext_resource type="Script" uid="uid://dmsvqngy5xkw2" path="res://scripts/world_look.gd" id="1_look"]
+[ext_resource type="AudioStream" path="res://audio/rain.mp3" id="2_amb"]
+
+[resource]
+script = ExtResource("1_look")
+title = "Rain"
+style = 5
+ink = Color(0.68, 0.8, 0.94, 1)
+in_journey = false
+ambience = ExtResource("2_amb")
+ambience_bus = "Rain"
+particle_strength = 1.05
+particle_size = 1.0
+burst_strength = 0.75
+burst_size = 1.0
+burst_fall = 0.45
