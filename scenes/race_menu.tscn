@@ -37,7 +37,7 @@ custom_minimum_size = Vector2(440, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.62, 0.58, 0.74, 1)
 theme_override_font_sizes/font_size = 22
-text = "60 seconds. 4×4 warms up, then 6×6 spikes in. Clears add +19 / +29. Wrong −4s."
+text = "Solve as fast as you can."
 horizontal_alignment = 1
 autowrap_mode = 2
 

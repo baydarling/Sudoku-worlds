@@ -2,7 +2,7 @@ class_name FooterIcon
 extends Control
 ## Simple line icons for the home footer.
 
-enum Kind { SETTINGS, PROFILE, BOARD, QUIT }
+enum Kind { SETTINGS, PROFILE, BOARD, QUIT, STAR }
 
 @export var kind: Kind = Kind.SETTINGS
 
@@ -26,6 +26,8 @@ func _draw() -> void:
 			_draw_board(center, ink)
 		Kind.QUIT:
 			_draw_quit(center, ink)
+		Kind.STAR:
+			_draw_star(center, ink)
 
 
 func _draw_settings(center: Vector2, ink: Color) -> void:
@@ -50,6 +52,16 @@ func _draw_board(center: Vector2, ink: Color) -> void:
 	for height in bars:
 		draw_rect(Rect2(x, base_y - height, 8.0, height), ink, true)
 		x += 11.0
+
+
+func _draw_star(center: Vector2, ink: Color) -> void:
+	var points := PackedVector2Array()
+	for index in 10:
+		var angle: float = -PI * 0.5 + float(index) * PI / 5.0
+		var radius: float = 13.0 if index % 2 == 0 else 5.6
+		points.append(center + Vector2(cos(angle), sin(angle)) * radius)
+	points.append(points[0])
+	draw_polyline(points, ink, 2.0, true)
 
 
 func _draw_quit(center: Vector2, ink: Color) -> void:
