@@ -2679,10 +2679,10 @@ func _draw_sweep_streak(grid: Rect2, cell_size: float, fx: float, sweep: UnitSwe
 	if head <= 0.0 or strength <= 0.0:
 		return
 	var streak := _vivid.lock
-	streak.a = strength * 0.8
+	streak.a = strength * 0.95
 	var first: int = sweep.cells[0]
 	var last: int = sweep.cells[sweep.cells.size() - 1]
-	var width: float = maxf(2.0, fx * 0.045)
+	var width: float = maxf(4.0, fx * 0.08)
 	if _row_of(first) == _row_of(last):
 		var y: float = _get_cell_position(grid, cell_size, first).y + cell_size * 0.5
 		var from := Vector2(_get_cell_position(grid, cell_size, first).x, y)
@@ -2695,22 +2695,41 @@ func _draw_sweep_streak(grid: Rect2, cell_size: float, fx: float, sweep: UnitSwe
 		_draw_fading_streak(from, from.lerp(to, head), streak, width)
 	else:
 		var origin: Vector2 = _get_cell_position(grid, cell_size, first)
-		streak.a = strength * head * 0.8
-		draw_rect(Rect2(origin, Vector2(cell_size * float(box_width), cell_size * float(box_height))), streak, false, width)
+		var span := Vector2(cell_size * float(box_width), cell_size * float(box_height))
+		streak.a = strength * clampf(head * 1.4, 0.0, 1.0) * 0.95
+		var top_left := origin
+		var top_right := origin + Vector2(span.x, 0.0)
+		var bottom_right := origin + span
+		var bottom_left := origin + Vector2(0.0, span.y)
+		_draw_fading_streak(top_left, top_right, streak, width)
+		_draw_fading_streak(top_right, bottom_right, streak, width)
+		_draw_fading_streak(bottom_left, bottom_right, streak, width)
+		_draw_fading_streak(top_left, bottom_left, streak, width)
 
 
-## The streak's glow follows the same fade as its core, unlike the grid lines.
+## A solid bar. Antialiased strokes drawn after the grid never show up on the phone.
 func _draw_fading_streak(from: Vector2, to: Vector2, color: Color, width: float) -> void:
 	if color.a <= 0.01 or from.distance_to(to) < 0.5:
 		return
-	var fade: float = color.a
-	var outer := color
-	outer.a = 0.28 * fade
-	draw_line(from, to, outer, width * 5.5, true)
+	var delta: Vector2 = to - from
+	var glow := color
+	glow.a = color.a * 0.35
 	var mid := color
-	mid.a = 0.55 * fade
-	draw_line(from, to, mid, width * 2.4, true)
-	draw_line(from, to, color, width, true)
+	mid.a = color.a * 0.7
+	if absf(delta.x) >= absf(delta.y):
+		var left: float = minf(from.x, to.x)
+		var length: float = absf(delta.x)
+		var y: float = (from.y + to.y) * 0.5
+		draw_rect(Rect2(left, y - width * 2.2, length, width * 4.4), glow, true)
+		draw_rect(Rect2(left, y - width * 1.15, length, width * 2.3), mid, true)
+		draw_rect(Rect2(left, y - width * 0.5, length, width), color, true)
+	else:
+		var top: float = minf(from.y, to.y)
+		var length: float = absf(delta.y)
+		var x: float = (from.x + to.x) * 0.5
+		draw_rect(Rect2(x - width * 2.2, top, width * 4.4, length), glow, true)
+		draw_rect(Rect2(x - width * 1.15, top, width * 2.3, length), mid, true)
+		draw_rect(Rect2(x - width * 0.5, top, width, length), color, true)
 
 
 ## How far the light has filled one cell. The last cell is fully lit once the head arrives.
@@ -2748,7 +2767,7 @@ func _get_board_rect() -> Rect2:
 func _get_grid_rect() -> Rect2:
 	var board := _get_board_rect()
 	var ratio: float = GRID_PADDING_RATIO
-	if grid_size < CLASSIC_GRID:
+	if grid_size < CLASSIC_GRID and grid_size != SudokuGenerator.WIDE_SIZE:
 		ratio += 0.07 * (1.0 - float(grid_size) / float(CLASSIC_GRID))
 	var padding: float = board.size.x * ratio
 	return Rect2(board.position + Vector2(padding, padding), board.size - Vector2(padding, padding) * 2.0)
@@ -2866,17 +2885,98 @@ func _pulse_deferred(duration_ms: int, amplitude: float) -> void:
 	pulse_device(duration_ms, amplitude)
 
 
+## Loaded only on Android. Naming JavaClassWrapper in this file would fail to parse
+## on the Windows editor, where that class does not exist.
+const _ANDROID_HAPTIC_SOURCE: String = r"""extends RefCounted
+
+func buzz(duration_ms: int, amplitude: float) -> bool:
+	if not Engine.has_singleton("AndroidRuntime"):
+		return false
+	var runtime: Object = Engine.get_singleton("AndroidRuntime")
+	var activity: Object = runtime.call("getActivity")
+	if activity == null:
+		return false
+	var manager: Object = activity.call("getSystemService", "vibrator_manager")
+	var vibrator: Object = null
+	if manager != null:
+		vibrator = manager.call("getDefaultVibrator")
+	if vibrator == null:
+		vibrator = activity.call("getSystemService", "vibrator")
+	if vibrator == null:
+		return false
+	var has_motor: Variant = vibrator.call("hasVibrator")
+	if has_motor is bool and not has_motor:
+		return false
+	var hold: int = maxi(duration_ms, 50)
+	if amplitude >= 0.45:
+		hold = maxi(hold, 80)
+	var effect_class: Object = JavaClassWrapper.wrap("android.os.VibrationEffect")
+	if effect_class == null:
+		vibrator.call("vibrate", hold)
+		return true
+	var effect: Object = effect_class.call("createOneShot", hold, -1)
+	if effect == null:
+		return false
+	var attrs_class: Object = JavaClassWrapper.wrap("android.os.VibrationAttributes")
+	var builder_class: Object = JavaClassWrapper.wrap("android.os.VibrationAttributes$Builder")
+	if attrs_class != null and builder_class != null:
+		var usage: int = 18
+		var raw_usage: Variant = attrs_class.get("USAGE_TOUCH")
+		if typeof(raw_usage) == TYPE_INT or typeof(raw_usage) == TYPE_FLOAT:
+			usage = int(raw_usage)
+		var builder: Object = builder_class.call("VibrationAttributes$Builder")
+		if builder != null:
+			builder.call("setUsage", usage)
+			var attrs: Object = builder.call("build")
+			if attrs != null:
+				vibrator.call("vibrate", effect, attrs)
+				return true
+	vibrator.call("vibrate", effect)
+	return true
+"""
+
+static var _android_haptic: Object
+static var _android_haptic_checked: bool = false
+
+
+static func _android_buzzer() -> Object:
+	if _android_haptic_checked:
+		return _android_haptic
+	_android_haptic_checked = true
+	if not OS.has_feature("android") or not ClassDB.class_exists("JavaClassWrapper"):
+		return null
+	if not Engine.has_singleton("AndroidRuntime"):
+		return null
+	var script := GDScript.new()
+	script.source_code = _ANDROID_HAPTIC_SOURCE
+	if script.reload() != OK:
+		return null
+	_android_haptic = script.new()
+	return _android_haptic
+
+
+static func _pulse_android(duration_ms: int, amplitude: float) -> bool:
+	var buzzer: Object = _android_buzzer()
+	if buzzer == null:
+		return false
+	return bool(buzzer.call("buzz", duration_ms, amplitude))
+
+
 ## Native phones feel short pulses. Browsers need a longer `navigator.vibrate` call,
 ## and itch.io iframes / iPhone Safari often ignore it entirely.
+## Android drops Godot's own vibrate call, which runs from the application context.
 static func pulse_device(duration_ms: int, amplitude: float) -> void:
 	var ms: int = duration_ms
 	if OS.has_feature("web"):
 		ms = maxi(duration_ms * 4, 60)
-	Input.vibrate_handheld(ms, amplitude)
-	if not OS.has_feature("web") or not Engine.has_singleton("JavaScriptBridge"):
+		Input.vibrate_handheld(ms, amplitude)
+		if Engine.has_singleton("JavaScriptBridge"):
+			var js: Object = Engine.get_singleton("JavaScriptBridge")
+			js.call("eval", "try{if(navigator.vibrate){navigator.vibrate(%d);}}catch(e){}" % ms)
 		return
-	var js: Object = Engine.get_singleton("JavaScriptBridge")
-	js.call("eval", "try{if(navigator.vibrate){navigator.vibrate(%d);}}catch(e){}" % ms)
+	if OS.has_feature("android") and _pulse_android(ms, amplitude):
+		return
+	Input.vibrate_handheld(ms, amplitude)
 
 
 ## A correct digit that finishes a row, column, or box scores. Mistakes break the streak.
