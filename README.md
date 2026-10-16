@@ -2,6 +2,8 @@
 
 A portrait sudoku game. Travel a journey, race the clock, or drop into a world and play.
 
+Play it in the browser: [Sudoku Worlds on itch.io](https://baydarling.itch.io/sudokuworlds)
+
 ![Sudoku Worlds cover](art/sudoku-worlds-cover.jpg)
 
 ## Play
