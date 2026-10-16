@@ -31,6 +31,15 @@ void fragment() {
 	} else if (world == 4) {
 		float heat = 0.5 + 0.5 * sin(UV.x * 20.0 + TIME * 2.1);
 		color += vec3(1.0, 0.28, 0.06) * heat * 0.12 * bottom;
+	} else if (world == 5) {
+		vec2 rain_uv = vec2(UV.x * 36.0 + sin(TIME * 0.15) * 0.4, UV.y * 14.0 - TIME * 1.15);
+		float column = fract(rain_uv.x);
+		float drop = fract(rain_uv.y + fract(sin(floor(rain_uv.x) * 91.7) * 43758.5));
+		float streak = smoothstep(0.0, 0.05, column) * smoothstep(0.14, 0.05, column);
+		streak *= smoothstep(0.0, 0.12, drop) * smoothstep(0.42, 0.16, drop);
+		float mist = 0.5 + 0.5 * sin(TIME * 0.22 + UV.y * 1.6);
+		color += vec3(0.74, 0.82, 0.94) * streak * 0.28;
+		color += glow_color * mist * 0.045;
 	}
 	color *= mix(0.55, 1.0, mood);
 	COLOR = vec4(color, 1.0);

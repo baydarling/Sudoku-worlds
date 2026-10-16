@@ -5,6 +5,7 @@ extends Control
 const AlgaePatchScript: GDScript = preload("res://scripts/algae_patch.gd")
 const PoisonVineScript: GDScript = preload("res://scripts/poison_vine.gd")
 const CyberLockScript: GDScript = preload("res://scripts/cyber_lock.gd")
+const SandCacheScript: GDScript = preload("res://scripts/sand_cache.gd")
 
 ## Emitted once every cell is filled in without breaking a Sudoku rule.
 signal solved
@@ -16,7 +17,7 @@ signal digits_changed
 signal score_changed(score: int, streak: int)
 ## Emitted when a row, column, or box is completed correctly.
 signal unit_cleared
-## Emitted when a filled digit matches the puzzle's answer.
+## Emitted when a filled digit is legal on the board right now.
 signal correct_placed
 ## Emitted when pencil-mark mode is switched, including from the keyboard.
 signal notes_mode_changed(enabled: bool)
@@ -25,10 +26,24 @@ signal undo_availability_changed(can_undo: bool)
 ## Emitted when a filled digit does not match the puzzle's answer.
 ## `life_cost` is 2 on a still-active poison cell, otherwise 1.
 signal mistake_made(index: int, life_cost: int)
+## Steel Shield turned away the first clashing digit this puzzle.
+signal aegis_spent
+## The player tapped a cell while a shop seal is armed.
+signal seal_target(index: int)
 ## Emitted when a poison cell is filled with the right digit.
 signal poison_solved(index: int)
 ## Emitted when a Neon cyber lock opens after its row or column is solved.
 signal cyber_unlocked(index: int)
+## Emitted when a Water algae patch is fully cleaned.
+signal algae_cleaned(index: int)
+## Emitted on each algae tap before the patch rips off.
+signal algae_tapped(index: int)
+## Emitted on the tap that starts the rip, so the splash is not delayed.
+signal algae_splashed(index: int)
+## Emitted when a marked Desert cell is solved and its cache is uncovered.
+signal sand_cache_solved(index: int)
+## Emitted whenever Ember's heat meter fills.
+signal ember_overheated
 ## Emitted when one correct digit finishes more than one unit.
 signal combo_cleared(unit_count: int, gained: int)
 
@@ -53,6 +68,10 @@ const POP_SEPARATION: float = 52.0
 const STREAK_BREAK_LIFE: float = 0.9
 
 const LOCK_DURATION: float = 0.42
+const ORACLE_STAGGER: float = 0.34
+const ORACLE_LIFE: float = 0.92
+## A finished line shares this many motes. A double or triple must not multiply it by every cell.
+const BURST_CAP: int = 36
 const CONFLICT_MOTE_COUNT: int = 3
 ## The light crosses the finished unit, then the whole glow fades away.
 const SWEEP_TRAVEL_TIME: float = 0.8
@@ -65,7 +84,7 @@ const MOOD_DIFFICULTY: Array[float] = [0.62, 0.4, 0.18]
 const MOOD_BREATHE: float = 0.16
 const MOOD_CYCLE: float = 26.0
 
-enum ArtStyle { DESERT, WATER, NIGHT, FOREST, EMBER }
+enum ArtStyle { DESERT, WATER, NIGHT, FOREST, EMBER, RAIN }
 
 const COLOR_CONFLICT_TEXT: Color = Color(0.93, 0.64, 0.7)
 const COLOR_CONFLICT_CELL: Color = Color(0.72, 0.34, 0.44, 0.1)
@@ -84,6 +103,12 @@ const POISON_FLASH_LIFE: float = 0.28
 const CYBER_LOCK_MIN: int = 2
 const CYBER_LOCK_MAX: int = 6
 const CYBER_LOCK_TRIES: int = 12
+const SAND_CACHE_MIN: int = 3
+const SAND_CACHE_MAX: int = 5
+const EMBER_CELL_COOL: float = 0.025
+const EMBER_UNIT_COOL: float = 0.12
+const EMBER_MISTAKE_HEAT: float = 0.12
+const EMBER_RESET_HEAT: float = 0.3
 
 
 ## A restore point taken just before a move changes the board.
@@ -96,6 +121,13 @@ class Snapshot extends RefCounted:
 ## A correct placement: the cell flashes and a ring expands from it.
 class LockPulse extends RefCounted:
 	var index: int = -1
+	var age: float = 0.0
+
+
+## Oracle Eye revealing one true pencil mark. Negative age is the wait before this cell.
+class OracleFlash extends RefCounted:
+	var index: int = -1
+	var digit: int = 0
 	var age: float = 0.0
 
 
@@ -130,6 +162,7 @@ class Drift extends RefCounted:
 	var sand: bool = false
 	var leaf: bool = false
 	var flame: bool = false
+	var rain: bool = false
 	var wraps: bool = false
 	var base_size: float = 2.0
 	var hollow: float = 0.0
@@ -173,6 +206,7 @@ var _notes: Array[int] = []
 var _conflicts: Array[bool] = []
 var _undo_stack: Array[Snapshot] = []
 var _locks: Array[LockPulse] = []
+var _oracle: Array[OracleFlash] = []
 var _sweeps: Array[UnitSweep] = []
 var _score_pops: Array[ScorePop] = []
 ## Points for this puzzle. A clean row, column, or box adds more on a streak.
@@ -199,8 +233,16 @@ var last_place_index: int = -1
 var score_mult: float = 1.0
 ## Journey Magnet relic fills the last empty cell in a row or column.
 var magnet_enabled: bool = false
-## True while Magnet is writing, so Combo Coin ignores auto-fills.
+## True while Magnet is writing, so Relay ignores those fills.
 var magnet_filling: bool = false
+## Steel Shield can still bounce the first clashing digit this puzzle.
+var aegis_ready: bool = false
+## True while Relay is writing, so that fill does not count toward the next Relay.
+var relay_filling: bool = false
+## Armed shop seal: 0 box, 1 row, 2 column, 3 plus. -1 means a tap places a digit.
+var seal_aim: int = -1
+## True while a seal is writing, so those fills do not count as player moves.
+var seal_filling: bool = false
 var _magnet_busy: bool = false
 var _ambient_time: float = 0.0
 ## 0 is the dim board, 1 is the full neon board. It eases toward `_mood_target`.
@@ -216,7 +258,7 @@ var sky_top: Color = Color(0.02, 0.0, 0.04)
 var sky_bottom: Color = Color(0.05, 0.0, 0.08)
 var glow_color: Color = Color(0.96, 0.5, 1.0)
 var haptics_enabled: bool = true
-## When true, digits that break the solution are marked the same way as doubles.
+## When true, a player digit that is not the finished answer is painted red. It is still a legal place.
 var check_mistakes: bool = false:
 	set(value):
 		if check_mistakes == value:
@@ -238,6 +280,14 @@ var _poison_flash: ColorRect
 var _poison_flash_tween: Tween
 ## Neon cyber locks. Overlay nodes stay even after they open.
 var _cyber: Dictionary = {}
+## Desert caches are passive marks: solve the cell normally to uncover one.
+var _sand_caches: Dictionary = {}
+var _sand_bounty: int = 0
+## Ember pressure rises only while the board accepts play.
+var ember_heat: float = 0.0
+var _ember_active: bool = false
+var _ember_rate: float = 0.0
+var _ember_flash: float = 0.0
 
 
 func set_play_enabled(enabled: bool) -> void:
@@ -304,6 +354,7 @@ func _process(delta: float) -> void:
 	_advance_effects(step)
 	_advance_drifts(step)
 	_advance_score_pops(step)
+	_advance_ember_heat(step)
 	queue_redraw()
 
 
@@ -319,6 +370,8 @@ func load_puzzle(puzzle: SudokuGenerator.Puzzle) -> void:
 	clear_algae()
 	clear_poison()
 	clear_cyber_locks()
+	clear_sand_caches()
+	clear_ember_pressure()
 	score = 0
 	_streak = 0
 	magnet_filling = false
@@ -351,6 +404,9 @@ func export_run() -> Dictionary:
 		"algae": algae_indices(),
 		"poison": poison_indices(),
 		"cyber": cyber_indices(),
+		"sand_caches": sand_cache_indices(),
+		"ember_active": _ember_active,
+		"ember_heat": ember_heat,
 	}
 
 
@@ -390,6 +446,9 @@ func restore_run(data: Dictionary) -> bool:
 	_restore_algae(data.get("algae", PackedInt32Array()))
 	_restore_poison(data.get("poison", PackedInt32Array()))
 	_restore_cyber_locks(data.get("cyber", PackedInt32Array()))
+	_restore_sand_caches(data.get("sand_caches", PackedInt32Array()))
+	_ember_active = bool(data.get("ember_active", false))
+	ember_heat = clampf(float(data.get("ember_heat", 0.0)), 0.0, 1.0)
 	return true
 
 
@@ -596,6 +655,8 @@ func _palette_for(style: ArtStyle, vivid: bool) -> Palette:
 			_fill_forest(palette, vivid)
 		ArtStyle.EMBER:
 			_fill_ember(palette, vivid)
+		ArtStyle.RAIN:
+			_fill_rain(palette, vivid)
 		_:
 			_fill_night(palette, vivid)
 	return palette
@@ -766,6 +827,39 @@ func _fill_ember(palette: Palette, vivid: bool) -> void:
 		palette.sky_bottom = Color(0.1, 0.02, 0.0)
 
 
+func _fill_rain(palette: Palette, vivid: bool) -> void:
+	if vivid:
+		palette.well_top = Color(0.07, 0.09, 0.14)
+		palette.well_bottom = Color(0.03, 0.045, 0.08)
+		palette.line_thin = Color(0.68, 0.76, 0.86, 0.5)
+		palette.line_thick = Color(0.8, 0.88, 0.96, 0.78)
+		palette.given = Color(0.9, 0.93, 0.96)
+		palette.player = Color(0.72, 0.84, 0.96)
+		palette.note = Color(0.62, 0.72, 0.84, 0.75)
+		palette.selected = Color(0.55, 0.68, 0.86, 0.26)
+		palette.same_digit = Color(0.5, 0.64, 0.82, 0.18)
+		palette.peer = Color(0.2, 0.26, 0.36, 0.16)
+		palette.neon = Color(0.62, 0.76, 0.92)
+		palette.lock = Color(0.85, 0.9, 0.96)
+		palette.sky_top = Color(0.13, 0.16, 0.24)
+		palette.sky_bottom = Color(0.06, 0.08, 0.13)
+	else:
+		palette.well_top = Color(0.035, 0.045, 0.07)
+		palette.well_bottom = Color(0.018, 0.024, 0.04)
+		palette.line_thin = Color(0.32, 0.38, 0.48, 0.45)
+		palette.line_thick = Color(0.42, 0.5, 0.6, 0.62)
+		palette.given = Color(0.68, 0.74, 0.82)
+		palette.player = Color(0.48, 0.58, 0.72)
+		palette.note = Color(0.4, 0.48, 0.58, 0.68)
+		palette.selected = Color(0.28, 0.36, 0.48, 0.2)
+		palette.same_digit = Color(0.26, 0.34, 0.46, 0.14)
+		palette.peer = Color(0.12, 0.15, 0.22, 0.12)
+		palette.neon = Color(0.36, 0.46, 0.6)
+		palette.lock = Color(0.7, 0.78, 0.88)
+		palette.sky_top = Color(0.05, 0.06, 0.1)
+		palette.sky_bottom = Color(0.025, 0.03, 0.05)
+
+
 ## Writes `digit` into the selected cell; 0 clears it, as does repeating a digit.
 ## In notes mode the digit is toggled as a pencil mark instead.
 func write_digit(digit: int) -> void:
@@ -790,6 +884,13 @@ func write_digit(digit: int) -> void:
 		return
 	var value: int = 0 if _values[_selected] == digit else digit
 	if _values[_selected] == value:
+		return
+	if value != 0 and aegis_ready and _placement_clashes(_selected, value):
+		aegis_ready = false
+		aegis_spent.emit()
+		_pulse_cell(_selected)
+		spawn_caption("AEGIS", _selected)
+		_haptic(HAPTIC_CLEAR_MS, HAPTIC_CLEAR_AMP)
 		return
 	_push_undo()
 	var stake: int = poison_stake(_selected)
@@ -834,38 +935,168 @@ func is_cleared() -> bool:
 	return _is_solved()
 
 
-## Journey Oracle Eye: two random empties become clues. No score, no combo.
-func oracle_fill(count: int) -> void:
+## Dawn Band: pencil every legal candidate onto empty cells. Does not place digits.
+func dawn_mark() -> void:
+	if _locked or _solution.size() != cell_count:
+		return
+	var marked: int = 0
+	for index in cell_count:
+		if not _relic_target(index, false):
+			continue
+		var mask: int = _candidate_mask(index)
+		if mask == 0:
+			continue
+		_notes[index] = mask
+		marked += 1
+	if marked <= 0:
+		return
+	spawn_caption("DAWN")
+	_finish_board_change()
+
+
+## Oracle Eye: note the true digit on the empties with the fewest choices.
+func oracle_note(count: int) -> void:
 	if _locked or _solution.size() != cell_count or count <= 0:
 		return
-	var empties: Array[int] = []
-	for index in cell_count:
-		if _givens[index] != 0 or _values[index] != 0:
-			continue
-		if has_algae(index):
-			continue
-		if is_poison_active(index):
-			continue
-		if is_cyber_locked(index):
-			continue
-		if _solution[index] < 1 or _solution[index] > grid_size:
-			continue
-		empties.append(index)
-	empties.shuffle()
-	var filled: int = mini(count, empties.size())
-	for slot in filled:
-		var index: int = empties[slot]
-		_givens[index] = _solution[index]
-		_values[index] = _solution[index]
-		_notes[index] = 0
-		_erase_note_from_peers(index, _values[index])
-		var pulse := LockPulse.new()
-		pulse.index = index
-		_locks.append(pulse)
-	if filled <= 0:
+	var marked: int = 0
+	var last: int = -1
+	_oracle.clear()
+	while marked < count:
+		var index: int = _spotlight_true_note(false)
+		if index < 0:
+			break
+		last = index
+		var flash := OracleFlash.new()
+		flash.index = index
+		flash.digit = _solution[index]
+		flash.age = -float(marked) * ORACLE_STAGGER
+		_oracle.append(flash)
+		marked += 1
+	if marked <= 0:
 		return
-	_update_conflicts()
+	spawn_caption("ORACLE", last)
 	_finish_board_change()
+
+
+## Relay: fill one cell that has a single legal digit, or note the truth on the next best cell.
+func apply_relay() -> bool:
+	if not _play_enabled or _locked or _solution.size() != cell_count:
+		return false
+	var index: int = _find_single_candidate_cell()
+	if index >= 0:
+		_push_undo()
+		var digit: int = _solution[index]
+		var stake: int = poison_stake(index)
+		var completed_before: int = _completed_unit_mask()
+		_values[index] = digit
+		last_place_index = index
+		_erase_note_from_peers(index, digit)
+		_update_conflicts()
+		relay_filling = true
+		_cue_move_audio(index, completed_before)
+		_play_place_effect(index, completed_before)
+		_award_unit_points(index, completed_before, stake)
+		spawn_caption("RELAY", index)
+		_finish_board_change()
+		if magnet_enabled and not _locked:
+			apply_magnet_chain()
+		relay_filling = false
+		return true
+	var noted: int = _spotlight_true_note()
+	if noted < 0:
+		return false
+	spawn_caption("RELAY", noted)
+	_finish_board_change()
+	return true
+
+
+func seal_has_work(origin: int, kind: int) -> bool:
+	if not _play_enabled or _locked or _solution.size() != cell_count:
+		return false
+	if origin < 0 or origin >= cell_count or kind < 0 or kind > 3:
+		return false
+	for index in _seal_cells(origin, kind):
+		if _seal_can_fill(index):
+			return true
+	return false
+
+
+## Fills the box, row, column, or plus around `origin` with the answer. One undo step.
+func apply_seal(origin: int, kind: int) -> bool:
+	if not _play_enabled or _locked or _solution.size() != cell_count:
+		return false
+	if origin < 0 or origin >= cell_count or kind < 0 or kind > 3:
+		return false
+	var targets: Array[int] = []
+	for index in _seal_cells(origin, kind):
+		if not _seal_can_fill(index):
+			continue
+		targets.append(index)
+	if targets.is_empty():
+		return false
+	_push_undo()
+	seal_filling = true
+	for index in targets:
+		var digit: int = _solution[index]
+		var stake: int = poison_stake(index)
+		var completed_before: int = _completed_unit_mask()
+		_values[index] = digit
+		last_place_index = index
+		_erase_note_from_peers(index, digit)
+		_update_conflicts()
+		_cue_move_audio(index, completed_before)
+		_play_place_effect(index, completed_before)
+		_award_unit_points(index, completed_before, stake)
+		if _is_solved():
+			break
+	var captions: Array[String] = ["BOX", "ROW", "COLUMN", "PLUS"]
+	spawn_caption(captions[kind], origin)
+	seal_filling = false
+	_finish_board_change()
+	if magnet_enabled and not _locked:
+		apply_magnet_chain()
+	return true
+
+
+func _seal_can_fill(index: int) -> bool:
+	if index < 0 or index >= cell_count:
+		return false
+	if _givens[index] != 0:
+		return false
+	if has_algae(index) or is_poison_active(index) or is_cyber_locked(index):
+		return false
+	if _solution[index] < 1 or _solution[index] > grid_size:
+		return false
+	return _values[index] != _solution[index]
+
+
+@warning_ignore("integer_division")
+func _seal_cells(origin: int, kind: int) -> Array[int]:
+	var cells: Array[int] = []
+	var row: int = origin / grid_size
+	var column: int = origin % grid_size
+	if kind == 0:
+		var box_row: int = row / box_height
+		var box_column: int = column / box_width
+		for box_r in box_height:
+			for box_c in box_width:
+				cells.append((box_row * box_height + box_r) * grid_size + box_column * box_width + box_c)
+		return cells
+	if kind == 1:
+		for step in grid_size:
+			cells.append(row * grid_size + step)
+		return cells
+	if kind == 2:
+		for step in grid_size:
+			cells.append(step * grid_size + column)
+		return cells
+	for step in grid_size:
+		cells.append(row * grid_size + step)
+	for step in grid_size:
+		if step == row:
+			continue
+		cells.append(step * grid_size + column)
+	return cells
 
 
 ## Journey Magnet: last empty cell in a row or column fills itself.
@@ -948,6 +1179,7 @@ func _magnet_cell_ready(index: int) -> bool:
 func _finish_board_change() -> void:
 	_refresh_cyber_locks(true)
 	_sync_poison_visuals()
+	_sync_sand_cache_visuals(true)
 	queue_redraw()
 	_emit_progress()
 	if _is_solved() and not _locked:
@@ -989,6 +1221,83 @@ func _pick_hint_cell_filtered(skip_poison: bool) -> int:
 	return best_index
 
 
+func _placement_clashes(index: int, digit: int) -> bool:
+	if digit < 1 or digit > grid_size or index < 0 or index >= cell_count:
+		return false
+	for other in cell_count:
+		if other == index:
+			continue
+		if _values[other] == digit and _is_peer_of(other, index):
+			return true
+	return false
+
+
+func _relic_target(index: int, allow_covered: bool) -> bool:
+	if index < 0 or index >= cell_count:
+		return false
+	if _givens[index] != 0 or _values[index] != 0:
+		return false
+	if has_algae(index) or is_poison_active(index) or is_cyber_locked(index):
+		return false
+	if not allow_covered and has_sand_cache(index):
+		return false
+	if _solution[index] < 1 or _solution[index] > grid_size:
+		return false
+	return true
+
+
+func _find_single_candidate_cell() -> int:
+	for index in cell_count:
+		if not _relic_target(index, true):
+			continue
+		var mask: int = _candidate_mask(index)
+		if _count_mask_bits(mask) != 1:
+			continue
+		if _lowest_digit(mask) == _solution[index]:
+			return index
+	return -1
+
+
+## Pencils only the true digit. Skips a cell that already shows just that digit.
+func _spotlight_true_note(pulse: bool = true) -> int:
+	var best: int = -1
+	var best_count: int = grid_size + 1
+	for index in cell_count:
+		if not _relic_target(index, false):
+			continue
+		var truth: int = 1 << (_solution[index] - 1)
+		if _notes[index] == truth:
+			continue
+		var count: int = _count_mask_bits(_candidate_mask(index))
+		if count <= 0:
+			count = grid_size
+		if count < best_count:
+			best_count = count
+			best = index
+	if best < 0:
+		return -1
+	_notes[best] = 1 << (_solution[best] - 1)
+	if pulse:
+		_pulse_cell(best)
+	return best
+
+
+func _lowest_digit(mask: int) -> int:
+	for digit in range(1, grid_size + 1):
+		if mask & (1 << (digit - 1)) != 0:
+			return digit
+	return 0
+
+
+func _pulse_cell(index: int) -> void:
+	if index < 0 or index >= cell_count:
+		return
+	var pulse := LockPulse.new()
+	pulse.index = index
+	_locks.append(pulse)
+	queue_redraw()
+
+
 func _candidate_mask(index: int) -> int:
 	var mask: int = _digit_mask()
 	for other in cell_count:
@@ -1023,6 +1332,7 @@ func undo() -> void:
 	_update_conflicts()
 	_refresh_cyber_locks(false)
 	_sync_poison_visuals()
+	_sync_sand_cache_visuals(false)
 	queue_redraw()
 	_emit_progress()
 	undo_availability_changed.emit(not _undo_stack.is_empty())
@@ -1062,6 +1372,7 @@ func _write_note(digit: int) -> void:
 		_notes[_selected] ^= 1 << (digit - 1)
 	_refresh_cyber_locks(false)
 	_sync_poison_visuals()
+	_sync_sand_cache_visuals(false)
 	queue_redraw()
 	_emit_progress()
 
@@ -1120,6 +1431,7 @@ func _layout_hit_cells() -> void:
 	_layout_algae()
 	_layout_poison()
 	_layout_cyber_locks()
+	_layout_sand_caches()
 
 
 func has_algae(index: int) -> bool:
@@ -1142,6 +1454,10 @@ func clear_algae() -> void:
 		if is_instance_valid(patch):
 			if patch.is_connected(&"cleaned", _on_algae_cleaned):
 				patch.disconnect(&"cleaned", _on_algae_cleaned)
+			if patch.is_connected(&"tapped", _on_algae_tapped):
+				patch.disconnect(&"tapped", _on_algae_tapped)
+			if patch.is_connected(&"splashed", _on_algae_splashed):
+				patch.disconnect(&"splashed", _on_algae_splashed)
 			patch.queue_free()
 	_algae.clear()
 	for child in get_children():
@@ -1189,6 +1505,8 @@ func _place_algae(index: int) -> void:
 	patch.z_index = 24
 	patch.show_behind_parent = false
 	patch.connect(&"cleaned", _on_algae_cleaned)
+	patch.connect(&"tapped", _on_algae_tapped)
+	patch.connect(&"splashed", _on_algae_splashed)
 	add_child(patch)
 	_algae[index] = patch
 
@@ -1207,9 +1525,18 @@ func _layout_algae() -> void:
 		patch.size = Vector2(cell_size, cell_size)
 
 
+func _on_algae_tapped(index: int) -> void:
+	algae_tapped.emit(index)
+
+
+func _on_algae_splashed(index: int) -> void:
+	algae_splashed.emit(index)
+
+
 func _on_algae_cleaned(index: int) -> void:
 	_algae.erase(index)
 	_haptic(HAPTIC_PLACE_MS, HAPTIC_PLACE_AMP)
+	algae_cleaned.emit(index)
 	if _play_enabled and not _locked and index >= 0 and index < cell_count:
 		_selected = index
 	queue_redraw()
@@ -1298,7 +1625,7 @@ func _can_mark_poison(index: int) -> bool:
 		return false
 	if _givens[index] != 0 or _values[index] != 0:
 		return false
-	if has_algae(index) or has_poison(index) or has_cyber(index):
+	if has_algae(index) or has_poison(index) or has_cyber(index) or has_sand_cache(index):
 		return false
 	if _solution.size() == cell_count and (_solution[index] < 1 or _solution[index] > grid_size):
 		return false
@@ -1479,7 +1806,7 @@ func _can_mark_cyber(index: int) -> bool:
 		return false
 	if _givens[index] != 0 or _values[index] != 0:
 		return false
-	if has_algae(index) or has_poison(index) or has_cyber(index):
+	if has_algae(index) or has_poison(index) or has_cyber(index) or has_sand_cache(index):
 		return false
 	if _solution.size() == cell_count and (_solution[index] < 1 or _solution[index] > grid_size):
 		return false
@@ -1610,6 +1937,189 @@ func _deny_cyber(index: int) -> void:
 	_haptic(HAPTIC_PLACE_MS, HAPTIC_PLACE_AMP)
 
 
+func has_sand_cache(index: int) -> bool:
+	return _sand_caches.has(index) and is_instance_valid(_sand_caches[index] as Node)
+
+
+func sand_cache_indices() -> PackedInt32Array:
+	var packed := PackedInt32Array()
+	for key in _sand_caches.keys():
+		var index: int = int(key)
+		if has_sand_cache(index):
+			packed.append(index)
+	packed.sort()
+	return packed
+
+
+func sand_caches_cleared_count() -> int:
+	var cleared: int = 0
+	for key in _sand_caches.keys():
+		var index: int = int(key)
+		if has_sand_cache(index) and _cell_matches_solution(index):
+			cleared += 1
+	return cleared
+
+
+func set_sand_bounty(amount: int) -> void:
+	_sand_bounty = maxi(0, amount)
+	for key in _sand_caches.keys():
+		var cache: Node = _sand_caches[key] as Node
+		if is_instance_valid(cache):
+			cache.set("bounty", _sand_bounty)
+			if cache is CanvasItem:
+				(cache as CanvasItem).queue_redraw()
+
+
+func clear_sand_caches() -> void:
+	for key in _sand_caches.keys():
+		var cache: Node = _sand_caches[key] as Node
+		if is_instance_valid(cache):
+			cache.queue_free()
+	_sand_caches.clear()
+
+
+func seed_sand_caches(count: int = -1) -> void:
+	clear_sand_caches()
+	if cell_count <= 0:
+		return
+	var take: int = randi_range(SAND_CACHE_MIN, SAND_CACHE_MAX) if count < 0 else count
+	var empties: Array[int] = []
+	for index in cell_count:
+		if _can_mark_sand_cache(index):
+			empties.append(index)
+	empties.shuffle()
+	take = mini(maxi(0, take), empties.size())
+	for slot in take:
+		_place_sand_cache(empties[slot])
+	_layout_sand_caches()
+	_sync_sand_cache_visuals(false)
+
+
+func _can_mark_sand_cache(index: int) -> bool:
+	if index < 0 or index >= cell_count:
+		return false
+	if _givens[index] != 0 or _values[index] != 0:
+		return false
+	if has_algae(index) or has_poison(index) or has_cyber(index) or has_sand_cache(index):
+		return false
+	if _solution.size() == cell_count and (_solution[index] < 1 or _solution[index] > grid_size):
+		return false
+	return true
+
+
+func _restore_sand_caches(indices: Variant) -> void:
+	clear_sand_caches()
+	var packed := PackedInt32Array()
+	if indices is PackedInt32Array:
+		packed = indices
+	for index in packed:
+		if index < 0 or index >= cell_count or _givens[index] != 0:
+			continue
+		_place_sand_cache(index)
+	_layout_sand_caches()
+	_sync_sand_cache_visuals(false)
+
+
+func _place_sand_cache(index: int) -> void:
+	if has_sand_cache(index):
+		return
+	var cache: Control = SandCacheScript.new() as Control
+	cache.set("cell_index", index)
+	cache.set("bounty", _sand_bounty)
+	cache.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cache.z_index = 7
+	cache.show_behind_parent = false
+	add_child(cache)
+	_sand_caches[index] = cache
+
+
+func _layout_sand_caches() -> void:
+	var grid := _get_grid_rect()
+	if grid.size.x <= 1.0:
+		return
+	var cell_size: float = grid.size.x / float(grid_size)
+	for key in _sand_caches.keys():
+		var index: int = int(key)
+		var cache: Control = _sand_caches[key] as Control
+		if not is_instance_valid(cache):
+			continue
+		cache.position = _get_cell_position(grid, cell_size, index)
+		cache.size = Vector2(cell_size, cell_size)
+
+
+func _sync_sand_cache_visuals(announce: bool) -> void:
+	for key in _sand_caches.keys():
+		var index: int = int(key)
+		var cache: Node = _sand_caches[key] as Node
+		if not is_instance_valid(cache):
+			continue
+		var resolved: bool = _cell_matches_solution(index)
+		var was_resolved: bool = bool(cache.get("resolved"))
+		cache.call("set_resolved", resolved, announce)
+		if announce and resolved and not was_resolved:
+			sand_cache_solved.emit(index)
+			spawn_caption("TREASURE", index)
+
+
+func set_ember_pressure(seconds_to_overheat: float, reset_heat: bool = true) -> void:
+	_ember_active = seconds_to_overheat > 0.0
+	_ember_rate = 1.0 / maxf(seconds_to_overheat, 1.0) if _ember_active else 0.0
+	if reset_heat:
+		ember_heat = 0.0
+	_ember_flash = 0.0
+	queue_redraw()
+
+
+func clear_ember_pressure() -> void:
+	_ember_active = false
+	_ember_rate = 0.0
+	ember_heat = 0.0
+	_ember_flash = 0.0
+	queue_redraw()
+
+
+## Unfinished world marks use a high draw order, so they would sit on the results screen.
+func conceal_level_mechanics() -> void:
+	clear_algae()
+	clear_poison()
+	clear_cyber_locks()
+	clear_sand_caches()
+	clear_ember_pressure()
+
+
+func ember_active() -> bool:
+	return _ember_active
+
+
+func apply_score_penalty(amount: int) -> int:
+	var lost: int = mini(maxi(0, amount), score)
+	if lost <= 0:
+		return 0
+	score -= lost
+	score_changed.emit(score, _streak)
+	return lost
+
+
+func _advance_ember_heat(delta: float) -> void:
+	if _ember_flash > 0.0:
+		_ember_flash = maxf(0.0, _ember_flash - delta * 2.5)
+	if not _ember_active or not _play_enabled or _locked or _ember_rate <= 0.0:
+		return
+	ember_heat = minf(1.0, ember_heat + delta * _ember_rate)
+	if ember_heat < 1.0:
+		return
+	ember_heat = EMBER_RESET_HEAT
+	_ember_flash = 1.0
+	_haptic(HAPTIC_CLEAR_MS, HAPTIC_CLEAR_AMP)
+	ember_overheated.emit()
+
+
+func _cool_ember(amount: float) -> void:
+	if not _ember_active or amount <= 0.0:
+		return
+	ember_heat = maxf(0.0, ember_heat - amount)
+
+
 func _on_hit_cell_gui_input(event: InputEvent, index: int) -> void:
 	if not _play_enabled or _locked:
 		return
@@ -1620,6 +2130,10 @@ func _on_hit_cell_gui_input(event: InputEvent, index: int) -> void:
 	elif event is InputEventScreenTouch:
 		tapped = (event as InputEventScreenTouch).pressed
 	if not tapped:
+		return
+	if seal_aim >= 0:
+		seal_target.emit(index)
+		accept_event()
 		return
 	if has_algae(index):
 		return
@@ -1759,6 +2273,8 @@ func _draw() -> void:
 		_draw_trees(board)
 	elif _style == ArtStyle.EMBER:
 		_draw_crags(board)
+	elif _style == ArtStyle.RAIN:
+		_draw_rain_clouds(board)
 	_draw_world_flow()
 
 	var grid := _get_grid_rect()
@@ -1772,15 +2288,19 @@ func _draw() -> void:
 	_draw_effect_fills(grid, cell_size)
 	_draw_digits(grid, cell_size, ink)
 	_draw_grid_lines(grid, cell_size, fx)
+	_draw_oracle(grid, cell_size, ink)
 	_draw_effect_rings(grid, cell_size, fx)
 	_draw_line_drifts()
 	_draw_conflict_motes(grid, cell_size, fx)
 	_draw_outer_glow(board)
+	_draw_ember_heat(board, grid)
 	_draw_score_total(board, grid)
 	_draw_score_pops(fx)
 
 
 func _draw_sparkles() -> void:
+	if _style == ArtStyle.RAIN:
+		return
 	var board := _get_board_rect()
 	var center: Vector2 = board.get_center()
 	var orbit: float = board.size.x * 0.545
@@ -1862,6 +2382,59 @@ func _draw_score_total(board: Rect2, grid: Rect2) -> void:
 		draw_string(font, streak_pos, streak_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, streak_color)
 
 
+func _draw_ember_heat(board: Rect2, grid: Rect2) -> void:
+	if not _ember_active:
+		return
+	var lip_height: float = board.end.y - grid.end.y
+	var bar_height: float = minf(clampf(lip_height * 0.62, 16.0, 26.0), lip_height * 0.78)
+	var bar := Rect2(
+		Vector2(grid.position.x, grid.end.y + (lip_height - bar_height) * 0.55),
+		Vector2(grid.size.x, bar_height)
+	)
+	var pulse: float = 0.5 + 0.5 * sin(_ambient_time * lerpf(3.0, 8.0, ember_heat))
+	draw_rect(bar, Color(0.07, 0.012, 0.0, 0.94), true)
+	var filled: float = bar.size.x * ember_heat
+	if filled > 1.0:
+		var body := Rect2(bar.position, Vector2(filled, bar.size.y))
+		draw_rect(body, Color(0.62, 0.06, 0.0, 0.96), true)
+		draw_rect(Rect2(body.position, Vector2(filled, bar.size.y * 0.62)), Color(1.0, 0.34, 0.04, 0.95), true)
+		draw_rect(Rect2(body.position, Vector2(filled, bar.size.y * 0.28)), Color(1.0, 0.82, 0.28, 0.92), true)
+		_draw_ember_tongues(bar, filled, bar_height)
+	var edge := Color(1.0, 0.38, 0.05, 0.55 + pulse * 0.25)
+	draw_rect(bar, edge, false, maxf(1.6, bar_height * 0.1))
+	if ember_heat >= 0.72:
+		var hot := edge
+		hot.a = (ember_heat - 0.72) * (0.85 + pulse * 0.3)
+		draw_rect(bar.grow(2.0 + pulse * 2.0), hot, false, 2.0)
+
+
+func _draw_ember_tongues(bar: Rect2, filled: float, bar_height: float) -> void:
+	var step: float = 18.0
+	var x: float = bar.position.x + step * 0.45
+	var index: int = 0
+	var end_x: float = bar.position.x + filled - 3.0
+	while x < end_x:
+		var wave: float = sin(_ambient_time * (8.0 + float(index % 3) * 2.0) + float(index) * 1.7)
+		var height: float = bar_height * (0.55 + 0.5 * (0.5 + 0.5 * wave)) * lerpf(0.7, 1.2, ember_heat)
+		var width: float = step * (0.34 + 0.1 * sin(_ambient_time * 13.0 + float(index) * 0.8))
+		var tip := Vector2(x + sin(_ambient_time * 10.0 + float(index)) * 2.4, bar.position.y - height)
+		var outer := PackedVector2Array([
+			tip,
+			Vector2(x + width, bar.position.y + 2.0),
+			Vector2(x - width, bar.position.y + 2.0),
+		])
+		var flame := Color(1.0, 0.42, 0.05, 0.92).lerp(Color(1.0, 0.9, 0.4, 0.95), 0.5 + 0.5 * wave)
+		draw_colored_polygon(outer, flame)
+		var core := PackedVector2Array([
+			tip + Vector2(0.0, height * 0.42),
+			Vector2(x + width * 0.32, bar.position.y + 1.0),
+			Vector2(x - width * 0.32, bar.position.y + 1.0),
+		])
+		draw_colored_polygon(core, Color(1.0, 0.96, 0.72, 0.88))
+		x += step
+		index += 1
+
+
 func _draw_score_pops(fx: float = -1.0) -> void:
 	if _score_pops.is_empty():
 		return
@@ -1940,6 +2513,38 @@ func _draw_streak_break_shards(pop: ScorePop, origin: Vector2, fade: float) -> v
 		var angle: float = float(shard) * TAU / 6.0 + pop.age * 2.4
 		var dist: float = 10.0 + pop.age * 42.0
 		draw_circle(origin + Vector2(cos(angle), sin(angle)) * dist, 2.2 - pop.age * 1.1, speck)
+
+
+func _draw_oracle(grid: Rect2, cell_size: float, ink: float) -> void:
+	if _oracle.is_empty():
+		return
+	var font: Font = entry_font if entry_font != null else _score_font()
+	if font == null:
+		return
+	var note_size: int = maxi(10, int(minf(cell_size / float(maxi(box_width, box_height)), ink * 0.42) * 0.55))
+	var cell := Vector2(cell_size, cell_size)
+	for flash in _oracle:
+		if flash.age < 0.0 or flash.digit < 1:
+			continue
+		var travel: float = clampf(flash.age / ORACLE_LIFE, 0.0, 1.0)
+		var settle: float = travel * travel * (3.0 - 2.0 * travel)
+		var origin: Vector2 = _get_cell_position(grid, cell_size, flash.index)
+		var center: Vector2 = origin + cell * 0.5
+		var wash := Color(0.62, 0.42, 1.0, (1.0 - travel) * 0.42)
+		draw_rect(Rect2(origin, cell), wash, true)
+		var ring := Color(0.86, 0.74, 1.0, (1.0 - clampf(travel / 0.75, 0.0, 1.0)) * 0.95)
+		var radius: float = lerpf(cell_size * 0.12, cell_size * 0.46, clampf(travel / 0.7, 0.0, 1.0))
+		draw_arc(center, radius, 0.0, TAU, 20, ring, maxf(1.6, ink * 0.04), true)
+		var slot := Vector2i((flash.digit - 1) % box_width, int((flash.digit - 1) / box_width))
+		var slot_center := origin + Vector2((float(slot.x) + 0.5) * cell_size / float(box_width), (float(slot.y) + 0.5) * cell_size / float(box_height))
+		var at: Vector2 = center.lerp(slot_center, settle)
+		var pop_size: int = int(round(lerpf(ink * 0.5, float(note_size), settle)))
+		var text: String = str(flash.digit)
+		var text_width: float = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, pop_size).x
+		var baseline: float = (font.get_ascent(pop_size) - font.get_descent(pop_size)) * 0.5
+		var fade: float = 1.0 - clampf((travel - 0.62) / 0.38, 0.0, 1.0)
+		var ink_color := Color(1.0, 0.93, 0.62, fade)
+		draw_string(font, at + Vector2(-text_width * 0.5, baseline), text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, pop_size, ink_color)
 
 
 func _draw_digits(grid: Rect2, cell_size: float, ink: float) -> void:
@@ -2045,6 +2650,9 @@ func _draw_effect_fills(grid: Rect2, cell_size: float) -> void:
 			var light := _vivid.neon
 			light.a = strength * (0.26 + 0.4 * lit)
 			draw_rect(Rect2(_get_cell_position(grid, cell_size, sweep.cells[slot]), cell), light, true)
+	if _ember_flash > 0.0:
+		var flash := Color(1.0, 0.12, 0.015, 0.34 * _ember_flash)
+		draw_rect(grid, flash, true)
 
 
 func _draw_effect_rings(grid: Rect2, cell_size: float, fx: float) -> void:
@@ -2071,10 +2679,10 @@ func _draw_sweep_streak(grid: Rect2, cell_size: float, fx: float, sweep: UnitSwe
 	if head <= 0.0 or strength <= 0.0:
 		return
 	var streak := _vivid.lock
-	streak.a = strength * 0.8
+	streak.a = strength * 0.95
 	var first: int = sweep.cells[0]
 	var last: int = sweep.cells[sweep.cells.size() - 1]
-	var width: float = maxf(2.0, fx * 0.045)
+	var width: float = maxf(4.0, fx * 0.08)
 	if _row_of(first) == _row_of(last):
 		var y: float = _get_cell_position(grid, cell_size, first).y + cell_size * 0.5
 		var from := Vector2(_get_cell_position(grid, cell_size, first).x, y)
@@ -2087,22 +2695,41 @@ func _draw_sweep_streak(grid: Rect2, cell_size: float, fx: float, sweep: UnitSwe
 		_draw_fading_streak(from, from.lerp(to, head), streak, width)
 	else:
 		var origin: Vector2 = _get_cell_position(grid, cell_size, first)
-		streak.a = strength * head * 0.8
-		draw_rect(Rect2(origin, Vector2(cell_size * float(box_width), cell_size * float(box_height))), streak, false, width)
+		var span := Vector2(cell_size * float(box_width), cell_size * float(box_height))
+		streak.a = strength * clampf(head * 1.4, 0.0, 1.0) * 0.95
+		var top_left := origin
+		var top_right := origin + Vector2(span.x, 0.0)
+		var bottom_right := origin + span
+		var bottom_left := origin + Vector2(0.0, span.y)
+		_draw_fading_streak(top_left, top_right, streak, width)
+		_draw_fading_streak(top_right, bottom_right, streak, width)
+		_draw_fading_streak(bottom_left, bottom_right, streak, width)
+		_draw_fading_streak(top_left, bottom_left, streak, width)
 
 
-## The streak's glow follows the same fade as its core, unlike the grid lines.
+## A solid bar. Antialiased strokes drawn after the grid never show up on the phone.
 func _draw_fading_streak(from: Vector2, to: Vector2, color: Color, width: float) -> void:
 	if color.a <= 0.01 or from.distance_to(to) < 0.5:
 		return
-	var fade: float = color.a
-	var outer := color
-	outer.a = 0.28 * fade
-	draw_line(from, to, outer, width * 5.5, true)
+	var delta: Vector2 = to - from
+	var glow := color
+	glow.a = color.a * 0.35
 	var mid := color
-	mid.a = 0.55 * fade
-	draw_line(from, to, mid, width * 2.4, true)
-	draw_line(from, to, color, width, true)
+	mid.a = color.a * 0.7
+	if absf(delta.x) >= absf(delta.y):
+		var left: float = minf(from.x, to.x)
+		var length: float = absf(delta.x)
+		var y: float = (from.y + to.y) * 0.5
+		draw_rect(Rect2(left, y - width * 2.2, length, width * 4.4), glow, true)
+		draw_rect(Rect2(left, y - width * 1.15, length, width * 2.3), mid, true)
+		draw_rect(Rect2(left, y - width * 0.5, length, width), color, true)
+	else:
+		var top: float = minf(from.y, to.y)
+		var length: float = absf(delta.y)
+		var x: float = (from.x + to.x) * 0.5
+		draw_rect(Rect2(x - width * 2.2, top, width * 4.4, length), glow, true)
+		draw_rect(Rect2(x - width * 1.15, top, width * 2.3, length), mid, true)
+		draw_rect(Rect2(x - width * 0.5, top, width, length), color, true)
 
 
 ## How far the light has filled one cell. The last cell is fully lit once the head arrives.
@@ -2125,6 +2752,12 @@ func _sweep_strength(age: float) -> float:
 	return 1.0 - fade
 
 
+func grid_global_rect() -> Rect2:
+	var grid := _get_grid_rect()
+	var xform := get_global_transform()
+	return Rect2(xform * grid.position, grid.size * xform.get_scale())
+
+
 func _get_board_rect() -> Rect2:
 	var length: float = minf(size.x, size.y) * STAGE_SCALE
 	return Rect2((size - Vector2(length, length)) * 0.5, Vector2(length, length))
@@ -2134,7 +2767,7 @@ func _get_board_rect() -> Rect2:
 func _get_grid_rect() -> Rect2:
 	var board := _get_board_rect()
 	var ratio: float = GRID_PADDING_RATIO
-	if grid_size < CLASSIC_GRID:
+	if grid_size < CLASSIC_GRID and grid_size != SudokuGenerator.WIDE_SIZE:
 		ratio += 0.07 * (1.0 - float(grid_size) / float(CLASSIC_GRID))
 	var padding: float = board.size.x * ratio
 	return Rect2(board.position + Vector2(padding, padding), board.size - Vector2(padding, padding) * 2.0)
@@ -2192,8 +2825,6 @@ func _first_selectable_cell() -> int:
 
 func _play_place_effect(index: int, completed_before: int) -> void:
 	if _conflicts[index]:
-		return
-	if not _solution.is_empty() and _values[index] != _solution[index]:
 		if loud_pops:
 			_haptic(HAPTIC_CLEAR_MS, HAPTIC_CLEAR_AMP)
 		return
@@ -2204,12 +2835,15 @@ func _play_place_effect(index: int, completed_before: int) -> void:
 	var cleared: bool = false
 	for unit_index in _units.size():
 		var bit: int = 1 << unit_index
-		if (completed_after & bit) != 0 and (completed_before & bit) == 0:
-			var sweep := UnitSweep.new()
-			sweep.cells = _units[unit_index].duplicate()
-			_sweeps.append(sweep)
-			call_deferred("_spawn_line_drift", sweep.cells)
-			cleared = true
+		if (completed_after & bit) == 0 or (completed_before & bit) != 0:
+			continue
+		if not _unit_matches_solution(_units[unit_index]):
+			continue
+		var sweep := UnitSweep.new()
+		sweep.cells = _units[unit_index].duplicate()
+		_sweeps.append(sweep)
+		call_deferred("_spawn_line_drift", sweep.cells)
+		cleared = true
 	if cleared:
 		_haptic(HAPTIC_CLEAR_MS, HAPTIC_CLEAR_AMP)
 	else:
@@ -2217,11 +2851,11 @@ func _play_place_effect(index: int, completed_before: int) -> void:
 
 
 func _cue_move_audio(index: int, completed_before: int) -> void:
-	if index < 0 or index >= cell_count or _solution.size() != cell_count:
+	if index < 0 or index >= cell_count or _values[index] == 0 or _conflicts[index]:
 		return
-	if _values[index] == 0 or _values[index] != _solution[index]:
-		return
-	if _cleared_correct_unit(completed_before):
+	var cleared_unit: bool = _cleared_correct_unit(completed_before)
+	_cool_ember(EMBER_UNIT_COOL if cleared_unit else EMBER_CELL_COOL)
+	if cleared_unit:
 		unit_cleared.emit()
 		return
 	correct_placed.emit()
@@ -2251,17 +2885,98 @@ func _pulse_deferred(duration_ms: int, amplitude: float) -> void:
 	pulse_device(duration_ms, amplitude)
 
 
+## Loaded only on Android. Naming JavaClassWrapper in this file would fail to parse
+## on the Windows editor, where that class does not exist.
+const _ANDROID_HAPTIC_SOURCE: String = r"""extends RefCounted
+
+func buzz(duration_ms: int, amplitude: float) -> bool:
+	if not Engine.has_singleton("AndroidRuntime"):
+		return false
+	var runtime: Object = Engine.get_singleton("AndroidRuntime")
+	var activity: Object = runtime.call("getActivity")
+	if activity == null:
+		return false
+	var manager: Object = activity.call("getSystemService", "vibrator_manager")
+	var vibrator: Object = null
+	if manager != null:
+		vibrator = manager.call("getDefaultVibrator")
+	if vibrator == null:
+		vibrator = activity.call("getSystemService", "vibrator")
+	if vibrator == null:
+		return false
+	var has_motor: Variant = vibrator.call("hasVibrator")
+	if has_motor is bool and not has_motor:
+		return false
+	var hold: int = maxi(duration_ms, 50)
+	if amplitude >= 0.45:
+		hold = maxi(hold, 80)
+	var effect_class: Object = JavaClassWrapper.wrap("android.os.VibrationEffect")
+	if effect_class == null:
+		vibrator.call("vibrate", hold)
+		return true
+	var effect: Object = effect_class.call("createOneShot", hold, -1)
+	if effect == null:
+		return false
+	var attrs_class: Object = JavaClassWrapper.wrap("android.os.VibrationAttributes")
+	var builder_class: Object = JavaClassWrapper.wrap("android.os.VibrationAttributes$Builder")
+	if attrs_class != null and builder_class != null:
+		var usage: int = 18
+		var raw_usage: Variant = attrs_class.get("USAGE_TOUCH")
+		if typeof(raw_usage) == TYPE_INT or typeof(raw_usage) == TYPE_FLOAT:
+			usage = int(raw_usage)
+		var builder: Object = builder_class.call("VibrationAttributes$Builder")
+		if builder != null:
+			builder.call("setUsage", usage)
+			var attrs: Object = builder.call("build")
+			if attrs != null:
+				vibrator.call("vibrate", effect, attrs)
+				return true
+	vibrator.call("vibrate", effect)
+	return true
+"""
+
+static var _android_haptic: Object
+static var _android_haptic_checked: bool = false
+
+
+static func _android_buzzer() -> Object:
+	if _android_haptic_checked:
+		return _android_haptic
+	_android_haptic_checked = true
+	if not OS.has_feature("android") or not ClassDB.class_exists("JavaClassWrapper"):
+		return null
+	if not Engine.has_singleton("AndroidRuntime"):
+		return null
+	var script := GDScript.new()
+	script.source_code = _ANDROID_HAPTIC_SOURCE
+	if script.reload() != OK:
+		return null
+	_android_haptic = script.new()
+	return _android_haptic
+
+
+static func _pulse_android(duration_ms: int, amplitude: float) -> bool:
+	var buzzer: Object = _android_buzzer()
+	if buzzer == null:
+		return false
+	return bool(buzzer.call("buzz", duration_ms, amplitude))
+
+
 ## Native phones feel short pulses. Browsers need a longer `navigator.vibrate` call,
 ## and itch.io iframes / iPhone Safari often ignore it entirely.
+## Android drops Godot's own vibrate call, which runs from the application context.
 static func pulse_device(duration_ms: int, amplitude: float) -> void:
 	var ms: int = duration_ms
 	if OS.has_feature("web"):
 		ms = maxi(duration_ms * 4, 60)
-	Input.vibrate_handheld(ms, amplitude)
-	if not OS.has_feature("web") or not Engine.has_singleton("JavaScriptBridge"):
+		Input.vibrate_handheld(ms, amplitude)
+		if Engine.has_singleton("JavaScriptBridge"):
+			var js: Object = Engine.get_singleton("JavaScriptBridge")
+			js.call("eval", "try{if(navigator.vibrate){navigator.vibrate(%d);}}catch(e){}" % ms)
 		return
-	var js: Object = Engine.get_singleton("JavaScriptBridge")
-	js.call("eval", "try{if(navigator.vibrate){navigator.vibrate(%d);}}catch(e){}" % ms)
+	if OS.has_feature("android") and _pulse_android(ms, amplitude):
+		return
+	Input.vibrate_handheld(ms, amplitude)
 
 
 ## A correct digit that finishes a row, column, or box scores. Mistakes break the streak.
@@ -2269,14 +2984,15 @@ static func pulse_device(duration_ms: int, amplitude: float) -> void:
 func _award_unit_points(index: int, completed_before: int, stake: int = 1) -> void:
 	var move_stake: int = maxi(1, stake)
 	var wrong: bool = _conflicts[index]
-	if not wrong and not _solution.is_empty():
-		wrong = _values[index] != _solution[index]
+	if seal_filling and index < _solution.size() and _values[index] == _solution[index]:
+		wrong = false
 	if wrong:
 		_break_streak(index)
-		if not _solution.is_empty() and _values[index] != _solution[index]:
-			mistake_made.emit(index, move_stake)
-			if move_stake > 1:
-				flash_poison_miss()
+		if _ember_active:
+			ember_heat = minf(1.0, ember_heat + EMBER_MISTAKE_HEAT)
+		mistake_made.emit(index, move_stake)
+		if move_stake > 1:
+			flash_poison_miss()
 		return
 	var completed_after: int = _completed_unit_mask()
 	var gained_any: bool = false
@@ -2298,15 +3014,16 @@ func _award_unit_points(index: int, completed_before: int, stake: int = 1) -> vo
 		unit_count += 1
 		_spawn_score_pop(unit, gained, _streak)
 		gained_any = true
-	if move_stake > 1:
+	var vine_cleared: bool = move_stake > 1 and (_solution.is_empty() or _values[index] == _solution[index])
+	if vine_cleared:
 		poison_solved.emit(index)
-	if not gained_any and move_stake > 1 and _poison_bounty <= 0:
+	if not gained_any and vine_cleared and _poison_bounty <= 0:
 		var bonus: int = int(round(float(UNIT_POINTS) * maxf(score_mult, 0.5))) * move_stake
 		score += bonus
 		gained_total += bonus
 		_spawn_cell_score_pop(index, bonus, move_stake)
 		gained_any = true
-	elif move_stake > 1 and _poison_bounty <= 0:
+	elif vine_cleared and _poison_bounty <= 0:
 		_spawn_poison_tag(index)
 	if unit_count >= 2:
 		_spawn_combo_caption(unit_count, index)
@@ -2565,6 +3282,7 @@ func _advance_score_pops(step: float) -> void:
 
 func _clear_effects() -> void:
 	_locks.clear()
+	_oracle.clear()
 	_sweeps.clear()
 	_drifts.clear()
 	_score_pops.clear()
@@ -2593,6 +3311,8 @@ func _rebuild_flow() -> void:
 			count = 28
 		ArtStyle.EMBER:
 			count = 24
+		ArtStyle.RAIN:
+			count = 34
 		_:
 			count = 36
 	count = int(float(count) * _style_strength())
@@ -2626,6 +3346,11 @@ func _rebuild_flow() -> void:
 				else:
 					drift.velocity = Vector2(rng.randf_range(-12.0, 12.0), rng.randf_range(-52.0, -24.0))
 					drift.base_size = rng.randf_range(1.2, 2.5)
+			ArtStyle.RAIN:
+				drift.rain = true
+				drift.velocity = Vector2(rng.randf_range(-22.0, -8.0), rng.randf_range(150.0, 240.0))
+				drift.base_size = rng.randf_range(14.0, 26.0)
+				drift.life = rng.randf_range(1.6, 2.8)
 			_:
 				drift.velocity = Vector2(rng.randf_range(18.0, 46.0), rng.randf_range(-6.0, 6.0))
 		_flow.append(drift)
@@ -2653,12 +3378,16 @@ func _step_drifts(motes: Array[Drift], step: float) -> void:
 			elif mote.leaf:
 				mote.velocity.y += 210.0 * step
 				mote.velocity.x = sin(mote.age * 4.6 + mote.seed) * 42.0
+			elif mote.rain:
+				mote.velocity.y += 40.0 * step
 			elif _style == ArtStyle.EMBER:
 				mote.velocity.y -= 190.0 * step
 			elif fall > 0.0:
 				mote.velocity.y += SAND_GRAVITY * fall * step
 		mote.position += mote.velocity * step
-		if not mote.sand and not mote.leaf and not mote.flame:
+		if mote.rain and mote.wraps:
+			mote.position.x += sin(_ambient_time * 0.45 + mote.seed) * 10.0 * step
+		elif not mote.sand and not mote.leaf and not mote.flame and not mote.rain:
 			mote.position.y += sin(_ambient_time * 3.4 + mote.seed) * 16.0 * step
 		if mote.wraps:
 			if mote.age >= mote.life:
@@ -2666,6 +3395,8 @@ func _step_drifts(motes: Array[Drift], step: float) -> void:
 			if mote.position.x > size.x + 8.0:
 				mote.position.x = -8.0
 				mote.position.y = fmod(absf(mote.position.y + mote.seed * 40.0), size.y)
+			if mote.rain and mote.position.x < -16.0:
+				mote.position.x = size.x + 8.0
 			if mote.position.y > size.y + 8.0:
 				mote.position.y = -8.0
 			if mote.position.y < -8.0:
@@ -2690,22 +3421,21 @@ func _spawn_line_drift(cells: PackedInt32Array) -> void:
 	var vertical: bool = _column_of(first) == _column_of(last)
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	var density: float = 4.0
-	if _style == ArtStyle.DESERT:
-		density = 12.0
-	elif _style == ArtStyle.EMBER or _style == ArtStyle.FOREST:
-		density = 7.0
-	var per_cell: int = clampi(int(round(density * burst_strength)), 3, 18)
-	if _style == ArtStyle.DESERT:
-		per_cell = clampi(per_cell, 8, 18)
+	var budget: int = 14 if _style == ArtStyle.DESERT else 10
+	budget = clampi(int(round(float(budget) * burst_strength)), 6, 18)
 	if OS.has_feature("web"):
-		per_cell = clampi(int(round(float(per_cell) * 0.45)), 2, 8)
-	for cell in cells:
+		budget = mini(budget, 8)
+	# A second or third line in the same combo only adds a small puff.
+	if _drifts.size() >= 8:
+		budget = mini(budget, 5 if OS.has_feature("web") else 6)
+	budget = mini(budget, BURST_CAP - _drifts.size())
+	if budget <= 0:
+		return
+	var count: int = cells.size()
+	for mote_index in budget:
+		var cell: int = cells[mote_index % count]
 		var center: Vector2 = _get_cell_position(grid, cell_size, cell) + Vector2(cell_size, cell_size) * 0.5
-		for _mote in per_cell:
-			if _drifts.size() >= DRIFT_LIMIT:
-				return
-			_drifts.append(_make_burst(rng, center, cell_size, fx, horizontal, vertical))
+		_drifts.append(_make_burst(rng, center, cell_size, fx, horizontal, vertical))
 
 
 func _make_burst(rng: RandomNumberGenerator, center: Vector2, cell_size: float, fx: float, horizontal: bool, vertical: bool) -> Drift:
@@ -2749,6 +3479,14 @@ func _make_burst(rng: RandomNumberGenerator, center: Vector2, cell_size: float, 
 			mote.velocity = Vector2(
 				rng.randf_range(-36.0, 36.0),
 				-fx * rng.randf_range(0.85, 1.65)
+			)
+		ArtStyle.RAIN:
+			mote.rain = true
+			mote.life = rng.randf_range(0.7, 1.15)
+			mote.base_size = fx * rng.randf_range(0.22, 0.38)
+			mote.velocity = Vector2(
+				rng.randf_range(-28.0, -8.0),
+				fx * rng.randf_range(0.7, 1.25)
 			)
 		_:
 			mote.life = rng.randf_range(0.55, 0.95)
@@ -2834,6 +3572,33 @@ func _draw_crags(board: Rect2) -> void:
 	draw_colored_polygon(right, Color(0.16, 0.04, 0.01, 0.34 * strength))
 
 
+func _draw_rain_clouds(board: Rect2) -> void:
+	var strength: float = _style_strength()
+	if strength <= 0.02:
+		return
+	var drift: float = sin(_ambient_time * 0.18) * 12.0
+	var centers: Array[Vector2] = [
+		Vector2(board.position.x + 24.0 + drift, board.position.y - 28.0),
+		Vector2(board.position.x + board.size.x * 0.46, board.position.y - 52.0),
+		Vector2(board.end.x - 8.0 + drift * 0.5, board.position.y - 22.0),
+	]
+	var radii: Array[float] = [58.0, 74.0, 46.0]
+	for index in centers.size():
+		draw_circle(centers[index], radii[index], Color(0.42, 0.5, 0.62, 0.09 * strength))
+		draw_circle(centers[index] + Vector2(-10.0, -8.0), radii[index] * 0.58, Color(0.62, 0.7, 0.82, 0.05 * strength))
+
+
+func _draw_rain_streak(mote: Drift, color: Color, core: Color) -> void:
+	var dir: Vector2 = mote.velocity
+	if dir.length_squared() < 4.0:
+		dir = Vector2(-0.12, 1.0)
+	dir = dir.normalized()
+	var length: float = maxf(10.0, mote.base_size)
+	var head: Vector2 = mote.position
+	draw_line(head - dir * length, head, color, 1.35, true)
+	draw_circle(head, 1.15, core)
+
+
 func _draw_drift_list(motes: Array[Drift], burst: bool) -> void:
 	var strength: float = burst_strength if burst else _style_strength()
 	if strength <= 0.02:
@@ -2867,6 +3632,9 @@ func _draw_drift_list(motes: Array[Drift], burst: bool) -> void:
 			color = Color(1.0, 0.28, 0.05).lerp(Color(1.0, 0.62, 0.1), mix_gold)
 			color.a = (0.55 if not burst else 0.92) * fade * strength
 			core = Color(1.0, 0.94, 0.52, color.a * 0.95)
+		elif mote.rain:
+			color = Color(0.78, 0.86, 0.96, (0.32 if not burst else 0.7) * fade * strength)
+			core = Color(0.94, 0.97, 1.0, color.a * 0.85)
 		elif _style == ArtStyle.WATER:
 			color = Color(0.45, 0.88, 1.0, (0.28 if not burst else 0.9) * fade * strength)
 			core = Color(0.9, 0.98, 1.0, color.a * 0.8)
@@ -2879,6 +3647,9 @@ func _draw_drift_list(motes: Array[Drift], burst: bool) -> void:
 		else:
 			color = Color(0.96, 0.55, 1.0, (0.22 if not burst else 0.95) * fade * strength)
 			core = Color(1.0, 0.86, 1.0, color.a * 0.9)
+		if mote.rain:
+			_draw_rain_streak(mote, color, core)
+			continue
 		if mote.leaf:
 			var spin: float = mote.seed + mote.age * 3.2
 			_draw_leaf(mote.position, radius, spin, color, core)
@@ -2977,6 +3748,13 @@ func _advance_effects(step: float) -> void:
 			_locks.remove_at(lock_index)
 		else:
 			lock_index += 1
+	var oracle_index: int = 0
+	while oracle_index < _oracle.size():
+		_oracle[oracle_index].age += step
+		if _oracle[oracle_index].age >= ORACLE_LIFE:
+			_oracle.remove_at(oracle_index)
+		else:
+			oracle_index += 1
 	var sweep_index: int = 0
 	while sweep_index < _sweeps.size():
 		_sweeps[sweep_index].age += step
@@ -3010,9 +3788,20 @@ func _lock_scale(index: int) -> float:
 	return 1.0
 
 
+## A repeat is always painted. Show mistakes also paints a digit that is not the finished answer.
+func _paint_as_mistake(index: int) -> bool:
+	if _conflicts[index]:
+		return true
+	if not check_mistakes or _solution.size() != cell_count:
+		return false
+	if _givens[index] != 0 or _values[index] == 0:
+		return false
+	return _values[index] != _solution[index]
+
+
 ## A slow wobble on a repeated digit. The cell and the grid stay still.
 func _conflict_shake(index: int, cell_size: float) -> Vector2:
-	if not _conflicts[index]:
+	if not _paint_as_mistake(index):
 		return Vector2.ZERO
 	var phase: float = float(index) * 1.37
 	var across: float = sin(_ambient_time * 4.4 + phase)
@@ -3022,7 +3811,7 @@ func _conflict_shake(index: int, cell_size: float) -> Vector2:
 
 func _draw_conflict_motes(grid: Rect2, cell_size: float, fx: float) -> void:
 	for index in cell_count:
-		if not _conflicts[index] or _values[index] == 0:
+		if not _paint_as_mistake(index) or _values[index] == 0:
 			continue
 		var center: Vector2 = _get_cell_position(grid, cell_size, index) + Vector2(cell_size, cell_size) * 0.5
 		center += _conflict_shake(index, fx)
@@ -3053,7 +3842,7 @@ func _build_sparkles() -> void:
 
 
 func _get_highlight(index: int) -> Color:
-	if _conflicts[index]:
+	if _paint_as_mistake(index):
 		return COLOR_CONFLICT_CELL
 	if _selected < 0:
 		return COLOR_NONE
@@ -3068,12 +3857,12 @@ func _get_highlight(index: int) -> Color:
 
 
 func _get_text_color(index: int) -> Color:
-	if _conflicts[index]:
+	if _paint_as_mistake(index):
 		return COLOR_CONFLICT_TEXT
 	return _c_given() if _givens[index] != 0 else _c_player()
 
 
-## Flags every cell whose digit is repeated inside its row, column or box.
+## Flags a digit only when it is already repeated in its row, column, or box.
 func _update_conflicts() -> void:
 	_conflicts.fill(false)
 	for unit in _units:
@@ -3087,13 +3876,6 @@ func _update_conflicts() -> void:
 				_conflicts[first_seen[value]] = true
 			else:
 				first_seen[value] = index
-	if not check_mistakes or _solution.size() != cell_count:
-		return
-	for index in cell_count:
-		if _givens[index] != 0 or _values[index] == 0:
-			continue
-		if _values[index] != _solution[index]:
-			_conflicts[index] = true
 
 
 func _is_solved() -> bool:

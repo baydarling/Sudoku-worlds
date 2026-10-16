@@ -3,6 +3,8 @@ extends TextureRect
 ## Seaweed overlay for Water-world cells. Three taps rip it off.
 
 signal cleaned(cell_index: int)
+signal tapped(cell_index: int)
+signal splashed(cell_index: int)
 
 const TAP_NEED: int = 3
 const RIP_TIME: float = 0.46
@@ -203,6 +205,8 @@ func _register_tap() -> void:
 	_spawn_burst(10 if _taps < TAP_NEED else 22)
 	if _taps >= TAP_NEED:
 		_begin_rip()
+		return
+	tapped.emit(cell_index)
 
 
 func _begin_rip() -> void:
@@ -211,6 +215,7 @@ func _begin_rip() -> void:
 	_rip = 0.0
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip_contents = false
+	splashed.emit(cell_index)
 
 
 func _spawn_burst(amount: int) -> void:

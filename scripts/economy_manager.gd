@@ -7,13 +7,16 @@ class Payout extends RefCounted:
 	var flawless_bonus: int = 0
 	var interest: int = 0
 	var vine_bonus: int = 0
+	var sand_bonus: int = 0
+	var star_bonus: int = 0
 	var total: int = 0
-	var combo_applied: bool = false
 
 
 const CLEAR_REWARD: int = 500
 const FLAWLESS_BONUS: int = 250
 const BASE_VINE_GOLD: int = 100
+const BASE_SAND_GOLD: int = 50
+const BASE_STAR_GOLD: int = 100
 const INTEREST_STEP: int = 250
 const INTEREST_EACH: int = 50
 const INTEREST_CAP: int = 250
@@ -25,7 +28,6 @@ const WORLD_MULT: Array[float] = [1.0, 1.5, 2.2, 3.0]
 const STAGES: int = 3
 const FAIL_TAX_NUM: int = 1
 const FAIL_TAX_DEN: int = 3
-const MIDAS_MULT: float = 1.5
 
 var gold: int = 0
 var stage_level: int = 1
@@ -78,24 +80,28 @@ func vine_bounty(level: int = -1) -> int:
 	return _nice_price(int(round(float(BASE_VINE_GOLD) * world_multiplier_for_level(stage))))
 
 
-func quote_clear(mistakes: int, midas: bool, combo: bool, vines: int = 0) -> Payout:
+func sand_bounty(level: int = -1) -> int:
+	var stage: int = stage_level if level < 1 else level
+	return _nice_price(int(round(float(BASE_SAND_GOLD) * world_multiplier_for_level(stage))))
+
+
+func quote_clear(mistakes: int, vines: int = 0, sand_caches: int = 0, stars: int = 0) -> Payout:
 	var slip := Payout.new()
 	slip.clear_reward = CLEAR_REWARD
-	if midas:
-		slip.clear_reward = int(round(float(CLEAR_REWARD) * MIDAS_MULT))
 	if mistakes <= 0:
 		slip.flawless_bonus = FLAWLESS_BONUS
 	slip.interest = interest_on(gold)
 	slip.vine_bonus = vine_bounty() * maxi(0, vines)
-	slip.total = slip.clear_reward + slip.flawless_bonus + slip.interest + slip.vine_bonus
-	if combo:
-		slip.total *= 2
-		slip.combo_applied = true
+	slip.sand_bonus = sand_bounty() * maxi(0, sand_caches)
+	var earned: int = clampi(stars, 0, 3)
+	if earned > 0:
+		slip.star_bonus = _nice_price(int(round(float(BASE_STAR_GOLD * earned) * world_multiplier_for_level(stage_level))))
+	slip.total = slip.clear_reward + slip.flawless_bonus + slip.interest + slip.vine_bonus + slip.sand_bonus + slip.star_bonus
 	return slip
 
 
-func collect_clear(mistakes: int, midas: bool, combo: bool, vines: int = 0) -> Payout:
-	var slip: Payout = quote_clear(mistakes, midas, combo, vines)
+func collect_clear(mistakes: int, vines: int = 0, sand_caches: int = 0, stars: int = 0) -> Payout:
+	var slip: Payout = quote_clear(mistakes, vines, sand_caches, stars)
 	gold = maxi(0, gold + slip.total)
 	return slip
 

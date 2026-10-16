@@ -88,6 +88,13 @@ theme_override_colors/font_color = Color(1, 0.42, 0.14, 1)
 theme_override_font_sizes/font_size = 34
 text = "Ember"
 
+[node name="RainButton" type="Button" parent="Center/VBox/List"]
+custom_minimum_size = Vector2(440, 92)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.68, 0.8, 0.94, 1)
+theme_override_font_sizes/font_size = 34
+text = "Rain"
+
 [node name="Spacer2" type="Control" parent="Center/VBox" unique_id=1718569075]
 custom_minimum_size = Vector2(0, 8)
 layout_mode = 2

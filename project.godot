@@ -14,7 +14,10 @@ config/name="Sudoku Worlds"
 run/main_scene="res://scenes/main.tscn"
 config/quit_on_go_back=false
 config/features=PackedStringArray("4.7", "Mobile")
-config/icon="res://icon.svg"
+boot_splash/bg_color=Color(0.16, 0.1, 0.16, 1)
+boot_splash/stretch_mode=0
+boot_splash/image="res://icons/main_192.png"
+config/icon="res://icons/main_192.png"
 
 [audio]
 
