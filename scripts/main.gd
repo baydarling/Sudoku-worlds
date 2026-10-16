@@ -1085,11 +1085,12 @@ func _build_number_pad() -> void:
 	_digit_remain_labels.clear()
 	_erase_button = null
 	var digits: int = _board.grid_size
+	var button_height: float = _pad_button_height()
 	_number_pad.columns = _pad_columns()
 	for digit in range(1, digits + 1):
 		var button := Button.new()
 		button.text = str(digit)
-		button.custom_minimum_size = Vector2(0.0, 112.0)
+		button.custom_minimum_size = Vector2(0.0, button_height)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.add_theme_font_size_override("font_size", 42)
 		_arm_tap(button, _board.write_digit.bind(digit))
@@ -1110,7 +1111,7 @@ func _build_number_pad() -> void:
 		_digit_remain_labels.append(remain)
 	var erase_button := Button.new()
 	erase_button.text = "Erase"
-	erase_button.custom_minimum_size = Vector2(0.0, 112.0)
+	erase_button.custom_minimum_size = Vector2(0.0, button_height)
 	erase_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	erase_button.add_theme_font_size_override("font_size", 24)
 	_arm_tap(erase_button, _board.write_digit.bind(0))
@@ -1130,6 +1131,12 @@ func _pad_columns() -> int:
 	if _board.grid_size == SudokuGenerator.WIDE_SIZE:
 		return 4
 	return 5
+
+
+func _pad_button_height() -> float:
+	if _board.grid_size == SudokuGenerator.WIDE_SIZE:
+		return 96.0
+	return 112.0
 
 
 func _set_input_enabled(enabled: bool) -> void:
@@ -1181,25 +1188,20 @@ func _on_quick_play_pressed() -> void:
 
 
 func _pick_quick_play() -> void:
-	if worlds.is_empty():
+	var choices: Array[int] = []
+	for index in worlds.size():
+		if worlds[index] != null:
+			choices.append(index)
+	if choices.is_empty():
 		_world_index = 0
 		_difficulty = Difficulty.EASY
 		return
-	var previous_world: int = _world_index
-	var previous_difficulty: int = int(_difficulty)
-	var choices: Array[int] = _featured_world_indices()
-	if choices.is_empty():
-		_difficulty = Difficulty.EASY
-		return
-	for _attempt in 8:
-		var index: int = choices[randi() % choices.size()]
-		var difficulty: Difficulty = (randi() % 3) as Difficulty
-		if index == previous_world and int(difficulty) == previous_difficulty and choices.size() > 1:
-			continue
-		_world_index = index
-		_difficulty = difficulty
-		return
-	_world_index = choices[0]
+	var pool: Array[int] = []
+	var skip_current: bool = _mode == Mode.QUICK and choices.size() > 1
+	for index in choices:
+		if not skip_current or index != _world_index:
+			pool.append(index)
+	_world_index = pool[randi() % pool.size()]
 	_difficulty = (randi() % 3) as Difficulty
 
 
@@ -1276,6 +1278,11 @@ func _on_journey_button_pressed() -> void:
 	if _transitioning:
 		return
 	if _journey_complete or _journey_progress < 1:
+		_clear_journey_confirm()
+		_transitioning = true
+		await _zoom_away(_main_menu, _journey_button)
+		await _enter_journey()
+		_transitioning = false
 		return
 	_clear_journey_confirm()
 	_transitioning = true
@@ -2039,6 +2046,7 @@ func _deal_race_chain() -> void:
 	_board.queue_redraw()
 	_board.set_mood_sources(_difficulty, _remaining_cells, _blanks_for_current(), true)
 	_hints_left = _hints_budget()
+	_sync_number_pad()
 	_update_status()
 
 
@@ -4078,7 +4086,9 @@ func _on_new_pressed() -> void:
 		_arm_new_confirm()
 		return
 	_reset_new_confirm()
-	if _mode == Mode.MINI:
+	if _mode == Mode.QUICK:
+		_pick_quick_play()
+	elif _mode == Mode.MINI:
 		_mini_chaining = false
 		_race_ending = false
 		_difficulty = Difficulty.EASY
@@ -4335,10 +4345,13 @@ func _apply_style_chrome() -> void:
 
 
 func _refresh_digit_pad() -> void:
+	if _digit_buttons.size() != _board.grid_size or not is_instance_valid(_erase_button):
+		_sync_number_pad()
 	if _digit_buttons.is_empty():
 		return
 	var counts: PackedInt32Array = _board.digit_counts()
-	for index in _digit_buttons.size():
+	var total: int = mini(_digit_buttons.size(), counts.size())
+	for index in total:
 		var remaining: int = maxi(0, _board.grid_size - counts[index])
 		var done: bool = remaining <= 0
 		var button: Button = _digit_buttons[index]
@@ -5131,8 +5144,6 @@ func _load_journey_progress() -> void:
 	_journey_complete = bool(config.get_value("journey", "complete", false))
 	_journey_pace = clampi(int(config.get_value("journey", "pace", JourneyPace.STANDARD)), 0, 1) as JourneyPace
 	_economy.gold = maxi(0, int(config.get_value("journey", "gold", 0)))
-	if _economy.gold > 8000:
-		_economy.gold = clampi(int(_economy.gold / 40), 250, 1500)
 	_relics.apply_mask(int(config.get_value("journey", "relics", 0)))
 	_relics.shop_pending = bool(config.get_value("journey", "shop_pending", false))
 	_relics.phoenix_spent = bool(config.get_value("journey", "phoenix_spent", false))
